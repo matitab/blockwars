@@ -373,7 +373,7 @@ void doBosses()
 		absX = abs(x);
 		absY = abs(y);
 		
-		if ((absX < 700) && (absY < 500))
+		if ((absX < DRAW_W) && (absY < DRAW_H))
 		{
 			if (self->flags & ENT_FIRETRAIL)
 			{

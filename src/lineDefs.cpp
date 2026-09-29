@@ -63,7 +63,7 @@ void doLineDefs()
 		absX = abs(x);
 		absY = abs(y);
 
-		if ((absX < 800) && (absY < 600))
+		if ((absX < ACTIVE_W) && (absY < ACTIVE_H))
 		{
 			#if DEBUG
 				graphics.drawRect(x, y, lineDef->width, lineDef->height, graphics.red, graphics.screen);

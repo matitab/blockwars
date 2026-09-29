@@ -81,7 +81,9 @@ void loadResources()
 		graphics.showErrorAndExit("Could not load map define list '%s'", "data/defines.h");
 
 	if (!engine.loadData("data/mainSprites"))
+        {
 		graphics.showErrorAndExit(ERR_FILE, "data/mainSprites");
+        }
 
 	char *token = strtok((char*)engine.dataBuffer, "\n");
 

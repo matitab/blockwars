@@ -355,6 +355,8 @@ SDL_Surface *Graphics::loadImage(const char *filename, bool srcalpha)
 	SDL_Surface *image, *newImage;
 
 	#if USEPAK
+	fprintf(stderr, "DEBUG loadImage: filename=[%s]\n", filename ? filename : "(null)");
+	fflush(stderr);
 		if (!engine->unpack(filename, PAK_IMG))
 			showErrorAndExit(ERR_FILE, filename);
 		image = IMG_Load_RW(engine->sdlrw, 1);
@@ -465,6 +467,12 @@ SDL_Surface *Graphics::quickSprite(const char *name, SDL_Surface *image)
 
 void Graphics::fade(int amount)
 {
+	if ((fadeBlack->w != screen->w) || (fadeBlack->h != screen->h))
+	{
+		SDL_FreeSurface(fadeBlack);
+		fadeBlack = alphaRect(screen->w, screen->h, 0x00, 0x00, 0x00);
+	}
+
 	SDL_SetAlpha(fadeBlack, amount);
 	blit(fadeBlack, 0, 0, screen, false);
 }
@@ -472,6 +480,12 @@ void Graphics::fade(int amount)
 void Graphics::fadeToBlack()
 {
 	int start = 0;
+
+	if ((fadeBlack->w != screen->w) || (fadeBlack->h != screen->h))
+	{
+		SDL_FreeSurface(fadeBlack);
+		fadeBlack = alphaRect(screen->w, screen->h, 0x00, 0x00, 0x00);
+	}
 
 	while (start < 50)
 	{
@@ -658,7 +672,7 @@ void Graphics::loadBackground(const char *filename)
 
 void Graphics::putPixel(int x, int y, Uint32 pixel, SDL_Surface *dest)
 {
-	if ((x < 0) || (x > 639) || (y < 0) || (y > 479))
+	if ((x < 0) || (x > dest->w - 1) || (y < 0) || (y > dest->h - 1))
 		return;
 
 	int bpp = dest->format->BytesPerPixel;
@@ -754,10 +768,13 @@ void Graphics::blit(SDL_Surface *image, int x, int y, SDL_Surface *dest, bool ce
 		return showErrorAndExit("graphics::blit() - NULL pointer", SDL_GetError());
 	}
 
-	if ((x < -image->w) || (x > 640 + image->w))
+	int destW = dest ? dest->w : 640;
+	int destH = dest ? dest->h : 480;
+
+	if ((x < -image->w) || (x > destW + image->w))
 		return;
 
-	if ((y < -image->h) || (y > 480 + image->h))
+	if ((y < -image->h) || (y > destH + image->h))
 		return;
 
 	// Set up a rectangle to draw to
@@ -780,7 +797,13 @@ void Graphics::blit(SDL_Surface *image, int x, int y, SDL_Surface *dest, bool ce
 void Graphics::drawBackground()
 {
 	if (background != NULL)
-		blit(background, 0, 0, screen, false);
+	{
+		// The backgrounds are 640x480: stretch them when the view is bigger
+		if ((background->w == screen->w) && (background->h == screen->h))
+			blit(background, 0, 0, screen, false);
+		else
+			SDL_BlitScaled(background, NULL, screen, NULL);
+	}
 	else
 		SDL_FillRect(screen, NULL, black);
 }
@@ -789,8 +812,8 @@ void Graphics::drawBackground(SDL_Rect *r)
 {
 	if (r->x < 0) r->x = 0;
 	if (r->y < 0) r->y = 0;
-	if (r->x + r->w > 639) r->w = 640 - r->x;
-	if (r->y + r->h > 639) r->h = 480 - r->y;
+	if (r->x + r->w > screen->w) r->w = screen->w - r->x;
+	if (r->y + r->h > screen->h) r->h = screen->h - r->y;
 
 	if (SDL_BlitSurface(background, r, screen, r) < 0)
 		showErrorAndExit("graphics::blit() - %s", SDL_GetError());
@@ -831,7 +854,8 @@ void Graphics::setFontSize(int size)
 
 SDL_Surface *Graphics::getString(const char *in, bool transparent)
 {
-	SDL_Surface *text = TTF_RenderUTF8_Shaded(font[fontSize], in, fontForeground, fontBackground);
+	fprintf(stderr, "DEBUG getString: fontSize=%d in=[%s]\n", fontSize, in ? in : "(null)");
+	SDL_Surface *text = TTF_RenderUTF8_Shaded(font[fontSize], (in && in[0]) ? in : " ", fontForeground, fontBackground);
 
 	if (!text)
 	{
@@ -854,7 +878,7 @@ void Graphics::drawString(const char *in, int x, int y, int alignment, SDL_Surfa
 {
 	bool center = false;
 
-	SDL_Surface *text = TTF_RenderUTF8_Shaded(font[fontSize], in, fontForeground, fontBackground);
+	SDL_Surface *text = TTF_RenderUTF8_Shaded(font[fontSize], (in && in[0]) ? in : " ", fontForeground, fontBackground);
 
 	if (!text)
 		text = TTF_RenderUTF8_Shaded(font[fontSize], "FONT_ERROR", fontForeground, fontBackground);
@@ -884,7 +908,7 @@ void Graphics::drawString(const char *in, int x, int y, int alignment, SDL_Surfa
 
 		cache.text = strdup(in);
 
-		cache.surface = TTF_RenderUTF8_Shaded(font[fontSize], in, fontForeground, fontBackground);
+		cache.surface = TTF_RenderUTF8_Shaded(font[fontSize], (in && in[0]) ? in : " ", fontForeground, fontBackground);
 
 		if (!cache.surface)
 			cache.surface = TTF_RenderUTF8_Shaded(font[fontSize], "FONT_ERROR", fontForeground, fontBackground);
@@ -1135,6 +1159,7 @@ void Graphics::showErrorAndExit(const char *error, const char *param)
 	}
 
 	char message[256];
+	fprintf(stderr, "DEBUG showError: error=[%s] param=[%s]\n", error, param);
 	snprintf(message, sizeof message, error, param);
 
 	setFontSize(3); setFontColor(0xff, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -1206,4 +1231,43 @@ void Graphics::showRootWarning()
 
 		SDL_Delay(16);
 	}
+}
+
+/*
+	Changes the size of the drawing surface (and the texture / logical size that show it).
+	Menus are laid out for 640x480, the in-mission view uses a bigger area.
+	The old contents are lost: the caller redraws everything afterwards.
+*/
+extern Graphics graphics;
+
+void setGameScreenSize(int w, int h)
+{
+	if ((graphics.screen->w == w) && (graphics.screen->h == h))
+		return;
+
+	SDL_Surface *newScreen = SDL_CreateRGBSurface(0, w, h, 32, 0xff0000, 0xff00, 0xff, 0xff000000);
+
+	if (newScreen == NULL)
+	{
+		printf("Could not create %dx%d surface: %s\n", w, h, SDL_GetError());
+		return;
+	}
+
+	SDL_Texture *newTexture = SDL_CreateTexture(graphics.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+
+	if (newTexture == NULL)
+	{
+		printf("Could not create %dx%d texture: %s\n", w, h, SDL_GetError());
+		SDL_FreeSurface(newScreen);
+		return;
+	}
+
+	SDL_FreeSurface(graphics.screen);
+	SDL_DestroyTexture(graphics.texture);
+
+	graphics.screen = newScreen;
+	graphics.texture = newTexture;
+
+	SDL_RenderSetLogicalSize(graphics.renderer, w, h);
+	SDL_FillRect(graphics.screen, NULL, graphics.black);
 }

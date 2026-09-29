@@ -115,8 +115,10 @@ bool Pak::unpack(const char *filename, unsigned char **buffer)
 	
 	for (unsigned int i = 0 ; i < numberOfFiles ; i++)
 	{
+	if (strstr(fd[i].filename, "mainSprites")) fprintf(stderr, "DEBUG pak entry: [%s] len=%zu vs searching [%s] len=%zu\n", fd[i].filename, strlen(fd[i].filename), filename, strlen(filename));
 		if (strcmp(filename, fd[i].filename) == 0)
 		{
+	fprintf(stderr, "DEBUG found match: location=%ld cSize=%u fSize=%u\n", (long)fd[i].location, fd[i].cSize, fd[i].fSize);
 			currentFile = &fd[i];
 			break;
 		}
@@ -141,6 +143,7 @@ bool Pak::unpack(const char *filename, unsigned char **buffer)
 	input = new unsigned char[(int)(currentFile->cSize * 1.01) + 12];
 	*buffer = new unsigned char[currentFile->fSize + 1];
 
+	{ size_t _r = fread(input, 1, currentFile->cSize, pak); fprintf(stderr, "DEBUG fread result=%zu expected=%u ferror=%d\n", _r, currentFile->cSize, ferror(pak)); fseek(pak, currentFile->location, SEEK_SET); }
 	if (fread(input, 1, currentFile->cSize, pak) != currentFile->cSize)
 	{
 		fclose(pak);

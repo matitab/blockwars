@@ -210,7 +210,7 @@ void doTraps()
 			inconsistant.
 		*/
 
-		if (((absX < 800) && (absY < 600)) || (trap->type == TRAP_TYPE_BARRIER) || (trap->type == TRAP_TYPE_FLAME))
+		if (((absX < ACTIVE_W) && (absY < ACTIVE_H)) || (trap->type == TRAP_TYPE_BARRIER) || (trap->type == TRAP_TYPE_FLAME))
 		{
 			remove = false;
 

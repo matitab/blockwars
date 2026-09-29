@@ -22,8 +22,13 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // Read in the define list used by the map data also
 #include "defines.h"
 
-#define min(a, b) ((a) < (b) ? (a) : (b))
-#define max(a, b) ((a) > (b) ? (a) : (b))
+// min/max used to be function-like macros, which break the C++ standard library
+// (it declares members called min()/max()). Templates keep the same behaviour
+// as the old macros (mixed argument types are allowed) without that problem.
+template <typename A, typename B>
+inline auto min(A a, B b) -> decltype(a < b ? a : b) { return a < b ? a : b; }
+template <typename A, typename B>
+inline auto max(A a, B b) -> decltype(a > b ? a : b) { return a > b ? a : b; }
 
 #define PI 3.14159265359
 
@@ -294,8 +299,21 @@ enum {
 #define BRICKSIZE  	32
 #define BRICKSHIFT	5
 
-#define OFFSETX 320
-#define OFFSETY 240
+// Camera centre follows the real surface size (the game view can differ from the 640x480 menus)
+#define OFFSETX (graphics.screen->w / 2)
+#define OFFSETY (graphics.screen->h / 2)
+
+// Menus and overlays are laid out for 640x480, the in-mission view is larger
+#define UI_VIEW_W	640
+#define UI_VIEW_H	480
+#define GAME_VIEW_W	800
+#define GAME_VIEW_H	600
+
+// "Process" and "draw" margins around the view (used to be 800x600 and 700x500)
+#define ACTIVE_W (graphics.screen->w + 160)
+#define ACTIVE_H (graphics.screen->h + 120)
+#define DRAW_W   (graphics.screen->w + 60)
+#define DRAW_H   (graphics.screen->h + 20)
 
 #define MAP_AIR 		0
 #define MAP_WATER 		1

@@ -136,7 +136,7 @@ void doSwitches()
 		absX = abs(x);
 		absY = abs(y);
 
-		if ((absX < 800) && (absY < 600))
+		if ((absX < ACTIVE_W) && (absY < ACTIVE_H))
 		{
 			if (!swt->activated)
 				graphics.blit(graphics.getSprite("SwitchOff", true)->getCurrentFrame(), x, y, graphics.screen, false);

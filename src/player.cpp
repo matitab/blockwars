@@ -21,6 +21,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "player.h"
 
+// Charged grenade throw (defined in bullets.cpp)
+void resetGrenadeCharge();
+bool handlePlayerGrenade(bool fireHeld);
+void drawGrenadeCharge();
+
 int medalWorker(void *data)
 {
 	char *tname = (char*)data;
@@ -112,6 +117,7 @@ void resetPlayer()
 	player.environment = ENV_AIR;
 	player.oxygen = 7;
 	player.fuel = 7;
+	resetGrenadeCharge();
 	addTeleportParticles(player.x + 10, player.y + 10, 50, SND_TELEPORT2);
 	
 	Math::removeBit(&player.flags, ENT_FLIES);
@@ -473,15 +479,22 @@ void doPlayer()
 		player.y = (MAPHEIGHT * BRICKSIZE) + 64;
 	}
 
-	if (config.isControl(CONTROL::FIRE))
+	bool fireHeld = config.isControl(CONTROL::FIRE);
+
+	// Grenades are charged while FIRE is held and thrown on release.
+	// For every other weapon this returns false and firing works as before.
+	if (!handlePlayerGrenade(fireHeld))
 	{
-		if (player.reload == 0)
+		if (fireHeld)
 		{
-			addBullet(&player, player.currentWeapon->getSpeed(player.face), 0);
-			if (player.currentWeapon == &weapon[WP_SPREAD])
+			if (player.reload == 0)
 			{
-				addBullet(&player, player.currentWeapon->getSpeed(player.face), 2);
-				addBullet(&player, player.currentWeapon->getSpeed(player.face), -2);
+				addBullet(&player, player.currentWeapon->getSpeed(player.face), 0);
+				if (player.currentWeapon == &weapon[WP_SPREAD])
+				{
+					addBullet(&player, player.currentWeapon->getSpeed(player.face), 2);
+					addBullet(&player, player.currentWeapon->getSpeed(player.face), -2);
+				}
 			}
 		}
 	}
@@ -526,5 +539,10 @@ void doPlayer()
 			}
 			graphics.blit(player.getFaceImage(), (int)(player.x - engine.playerPosX), (int)(player.y - engine.playerPosY), graphics.screen, false);
 		}
+	}
+
+	if (game.missionOverReason == MIS_INPROGRESS)
+	{
+		drawGrenadeCharge();
 	}
 }

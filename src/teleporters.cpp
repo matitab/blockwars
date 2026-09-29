@@ -87,7 +87,7 @@ void doTeleporters()
 		x = (int)(teleport->x - engine.playerPosX);
 		y = (int)(teleport->y - engine.playerPosY);
 
-		if ((abs(x) <= 800) && (abs(y) <= 600))
+		if ((abs(x) <= ACTIVE_W) && (abs(y) <= ACTIVE_H))
 		{
 			if (teleport->sprite == NULL)
 			{

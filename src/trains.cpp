@@ -384,7 +384,7 @@ void doTrains()
 			setTrainSprite(train);
 		}
 
-		if (train->sprite && (abs(x) <= 800) && (abs(y) <= 600))
+		if (train->sprite && (abs(x) <= ACTIVE_W) && (abs(y) <= ACTIVE_H))
 		{
 			graphics.blit(train->sprite->getCurrentFrame(), x, y, graphics.screen, false);
 		}

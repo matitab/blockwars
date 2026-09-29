@@ -19,7 +19,198 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
+#include <map>
+#include <algorithm>
 #include "enemies.h"
+
+// Extra per-enemy AI state (kept here so no other header has to change)
+struct EnemyAIState
+{
+	int telegraph;   // frames left of the "about to shoot" warning
+	bool fireNow;    // the warning is over: fire as soon as possible
+	int fireTimeout; // ...but give up if it can't fire within this many frames
+	float awareness; // 0 = calm, AWARE_SUSPICIOUS = "?", AWARE_ALERT = "!"
+	int lostSight;   // frames since the player was last noticed
+	bool alerted;    // reached full alert (holds the alert longer)
+	bool canSee;     // clear line of sight to the player this frame
+	int lastX, lastY; // where the player was last seen
+	int prevX;       // position last frame (to detect getting stuck)
+	int stuck;       // frames spent unable to move towards the target
+	int maxHealth;   // health the enemy spawned with (for the health bar)
+	int burstLeft;   // shots still to fire in the current burst
+	int burstTimeout; // safety: a burst can never last longer than this
+	unsigned int attackStamp; // last frame this enemy was busy attacking (attack turns)
+
+	EnemyAIState() : telegraph(0), fireNow(false), fireTimeout(0), awareness(0), lostSight(0), alerted(false), canSee(false), lastX(0), lastY(0), prevX(0), stuck(0), maxHealth(0), burstLeft(0), burstTimeout(0), attackStamp(0) {}
+};
+
+static std::map<Entity*, EnemyAIState> aiState;
+
+// Awareness (Metal Gear style): builds up while an enemy can see you, faster the
+// closer you are. "?" = suspicious, goes to investigate. "!" = alert, attacks.
+// After losing you it stays alert for a while, then calms down slowly.
+static const float AWARE_MAX = 100.0f;
+static const float AWARE_SUSPICIOUS = 30.0f;
+static const float AWARE_ALERT = 100.0f;
+static const float AWARE_DECAY = 0.16f;  // lost per frame once the hold time is over
+static const int ALERT_HOLD = 360;       // frames an alerted enemy keeps looking before calming down
+static const int SUSPICIOUS_HOLD = 120;  // same for an enemy that was only suspicious
+static const int VISION_RANGE = 480;     // farthest they can notice you
+static const int BEHIND_RANGE = 96;      // they only notice you behind their back this close
+static const float ALLY_ALERT_LEVEL = 65.0f;  // what allies get told when someone spots you / is shot
+static const float HEAR_LEVEL = 45.0f;        // what a nearby gunshot does
+static const int ALERT_RANGE_X = 300;   // chain alert radius
+static const int ALERT_RANGE_Y = 150;
+static const int HEAR_RANGE_X = 420;    // how far a gunshot is heard
+static const int HEAR_RANGE_Y = 220;
+static const int BURST_PAUSE = 50;      // extra wait after a burst
+
+static unsigned int aiFrame = 0;        // frame counter, used for the attack turns
+static int attackCooldown = 0;          // frames until another enemy may start attacking
+static int lastPlayerReload = 0;        // used to notice when the player fires
+
+static EnemyAIState &getAIState(Entity *enemy)
+{
+	return aiState[enemy];
+}
+
+// True when (part of) the enemy is inside the visible area. Enemies that are
+// off screen never notice the player: no more unseen red alerts.
+static bool isEnemyOnScreen(Entity *enemy)
+{
+	const int margin = 32;
+	int sx = (int)(enemy->x - engine.playerPosX);
+	int sy = (int)(enemy->y - engine.playerPosY);
+
+	return (sx > -(enemy->width + margin)) && (sx < (graphics.screen->w + margin)) &&
+	       (sy > -(enemy->height + margin)) && (sy < (graphics.screen->h + margin));
+}
+
+// Tiny pixel-art glyphs for the awareness icons
+static const char * const GLYPH_ALERT[7] = {".#.", ".#.", ".#.", ".#.", ".#.", "...", ".#."};
+static const char * const GLYPH_SUSPECT[7] = {".###.", "#...#", "....#", "..##.", "..#..", ".....", "..#.."};
+
+static void drawGlyph(const char * const *rows, int w, int px, int py, Uint32 color)
+{
+	for (int r = 0 ; r < 7 ; r++)
+	{
+		for (int c = 0 ; c < w ; c++)
+		{
+			if (rows[r][c] == '#')
+			{
+				graphics.drawRect(px + (c * 2), py + (r * 2), 2, 2, color, graphics.screen);
+			}
+		}
+	}
+}
+
+// "?" while suspicious, "!" while alert, plus a small gauge that fills as the
+// enemy notices you and drains as it calms down
+static void drawAwareness(Entity *enemy, int x, int y)
+{
+	if (enemy->health <= 0)
+		return;
+
+	std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+	if (it == aiState.end())
+		return;
+
+	const EnemyAIState &st = it->second;
+
+	if (st.awareness <= 0)
+		return;
+
+	int cx = x + (enemy->width / 2);
+	int top = y - 26;
+
+	if (st.awareness >= AWARE_ALERT)
+	{
+		Uint32 color = SDL_MapRGB(graphics.screen->format, 230, 30, 30);
+
+		// blink while winding up a shot
+		if ((st.telegraph > 0) && (((st.telegraph / 4) % 2) == 0))
+			color = graphics.yellow;
+
+		drawGlyph(GLYPH_ALERT, 3, cx - 3 + 1, top + 1, graphics.black);
+		drawGlyph(GLYPH_ALERT, 3, cx - 3, top, color);
+		return;
+	}
+
+	if (st.awareness >= AWARE_SUSPICIOUS)
+	{
+		drawGlyph(GLYPH_SUSPECT, 5, cx - 5 + 1, top + 1, graphics.black);
+		drawGlyph(GLYPH_SUSPECT, 5, cx - 5, top, graphics.yellow);
+	}
+
+	int w = 16;
+	int fill = (int)((w * st.awareness) / AWARE_ALERT);
+
+	if (fill < 1)
+		fill = 1;
+
+	Uint32 color = (st.awareness >= (AWARE_ALERT / 2)) ? SDL_MapRGB(graphics.screen->format, 255, 140, 0) : graphics.yellow;
+
+	graphics.drawRect(cx - (w / 2) - 1, y - 12, w + 2, 4, graphics.black, graphics.screen);
+	graphics.drawRect(cx - (w / 2), y - 11, fill, 2, color, graphics.screen);
+}
+
+// Small health bar over enemies that can take several hits. Only shown once
+// the enemy has been damaged, so one-hit enemies never get one.
+static void drawHealthBar(Entity *enemy, int x, int y)
+{
+	if (enemy->health <= 0)
+		return;
+
+	if (enemy->flags & (ENT_STATIC|ENT_IMMUNE|ENT_BOSS|ENT_GALDOV|ENT_INANIMATE))
+		return;
+
+	std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+	if ((it == aiState.end()) || (it->second.maxHealth <= 0))
+		return;
+
+	int maxHealth = it->second.maxHealth;
+
+	if (enemy->health >= maxHealth)
+		return;
+
+	int w = enemy->width;
+
+	if (w < 16) w = 16;
+	if (w > 40) w = 40;
+
+	int fill = (w * enemy->health) / maxHealth;
+
+	if (fill < 1)
+		fill = 1;
+
+	int bx = x + (enemy->width / 2) - (w / 2);
+	int by = y - 6;
+
+	Uint32 color;
+
+	if ((enemy->health * 2) > maxHealth)
+		color = SDL_MapRGB(graphics.screen->format, 0, 200, 0);
+	else if ((enemy->health * 4) > maxHealth)
+		color = graphics.yellow;
+	else
+		color = SDL_MapRGB(graphics.screen->format, 220, 0, 0);
+
+	graphics.drawRect(bx - 1, by - 1, w + 2, 5, graphics.black, graphics.screen);
+	graphics.drawRect(bx, by, fill, 3, color, graphics.screen);
+}
+
+// Higher difficulty = shorter warning
+static int getWindupFrames()
+{
+	int frames = 30 - (game.skill * 4);
+
+	if (frames < 12)
+		frames = 12;
+
+	return frames;
+}
 
 Entity *getDefinedEnemy(const char *name)
 {
@@ -66,6 +257,7 @@ void addEnemy(const char *name, int x, int y, int flags)
 	}
 
 	Entity *enemy = new Entity();
+	aiState.erase(enemy);
 	enemy->setName(defEnemy->name);
 	enemy->setSprites(defEnemy->sprite[0], defEnemy->sprite[1], defEnemy->sprite[2]);
 	enemy->currentWeapon = defEnemy->currentWeapon;
@@ -77,7 +269,9 @@ void addEnemy(const char *name, int x, int y, int flags)
 	enemy->setVelocity(0, 0);
 	enemy->baseThink = 60;
 
-	enemy->flags += flags;
+	enemy->flags |= flags;
+
+	getAIState(enemy).maxHealth = enemy->health;
 	
 	enemy->reload = 120; // Wait about seconds seconds before attacking
 
@@ -101,17 +295,23 @@ bool hasClearShot(Entity *enemy)
 	if ((dx == 0) && (dy == 0))
 		return true;
 
+	int steps = 0;
+
 	while (true)
 	{
 		x += dx;
 		y += dy;
+
+		// safety: never loop forever if the ray misses the player
+		if (++steps > 2000)
+			return false;
 
 		//graphics.blit(graphics.getSprite("AimedShot", true)->getCurrentFrame(), (int)(x - engine.playerPosX), (int)(y - engine.playerPosY), graphics.screen, true);
 
 		mx = (int)(x) >> BRICKSHIFT;
 		my = (int)(y) >> BRICKSHIFT;
 
-		if ((mx < 0) || (my < 0))
+		if ((mx < 0) || (my < 0) || (mx >= MAPWIDTH) || (my >= MAPHEIGHT))
 			return false;
 
 		if (map.isSolid(mx, my))
@@ -124,94 +324,442 @@ bool hasClearShot(Entity *enemy)
 	return true;
 }
 
+// Vertical velocity to add to a straight shot so it heads towards the player.
+// Only used for weapons that fly straight (weightless, no built-in dy) and for
+// enemies that don't already aim by themselves (ENT_AIMS).
+static float getAimDY(Entity *enemy)
+{
+	if (enemy->flags & ENT_AIMS)
+		return 0;
+
+	if (enemy->currentWeapon->dy != 0)
+		return 0;
+
+	if (!(enemy->currentWeapon->flags & ENT_WEIGHTLESS))
+		return 0;
+
+	float ex = enemy->x + (enemy->width / 2);
+	float ey = enemy->y + (enemy->height / 2);
+	float px = player.x + (player.width / 2);
+	float py = player.y + (player.height / 2);
+
+	float speed = fabs((float)enemy->currentWeapon->getSpeed(enemy->face));
+
+	// Lead the target: aim at where the player will be when the shot arrives.
+	// Easy = no prediction, Extreme = full prediction.
+	if (speed >= 1)
+	{
+		float lead = game.skill / 3.0f;
+
+		if (lead > 1)
+			lead = 1;
+
+		float t = fabs(px - ex) / speed;
+
+		if (t > 40)
+			t = 40;
+
+		px += player.dx * t * lead;
+
+		t = fabs(px - ex) / speed;
+
+		if (t > 40)
+			t = 40;
+
+		// gravity slows a jump down, so only lead about half of the vertical speed
+		float offset = player.dy * t * 0.5f * lead;
+
+		Math::limitFloat(&offset, -48, 48);
+
+		py += offset;
+	}
+
+	float dist = fabs(px - ex);
+
+	if (dist < 32)
+		dist = 32;
+
+	float dy = ((py - ey) / dist) * speed;
+
+	Math::limitFloat(&dy, -3, 3);
+
+	return dy;
+}
+
+// Tells every free enemy inside the given area where the player is
+static void alertEnemiesNear(int cx, int cy, int rangeX, int rangeY, Entity *skip, float awareLevel)
+{
+	Entity *other = (Entity*)map.enemyList.getHead();
+
+	while (other->next != NULL)
+	{
+		other = (Entity*)other->next;
+
+		if (other == skip)
+			continue;
+
+		if ((other->health <= 0) || (other->owner != other))
+			continue;
+
+		if (other->flags & (ENT_BOSS|ENT_STATIC|ENT_GALDOV|ENT_NOMOVE|ENT_INANIMATE))
+			continue;
+
+		if ((fabs(other->x - cx) > rangeX) || (fabs(other->y - cy) > rangeY))
+			continue;
+
+		EnemyAIState &st = getAIState(other);
+
+		st.lastX = (int)player.x;
+		st.lastY = (int)player.y;
+
+		if (st.awareness < awareLevel)
+			st.awareness = awareLevel;
+
+		st.lostSight = 0;
+
+		other->tx = (int)player.x;
+		other->ty = (int)player.y;
+	}
+}
+
+// When an enemy spots the player (or gets shot), nearby enemies hear about it too
+static void alertNearbyEnemies(Entity *source)
+{
+	alertEnemiesNear((int)source->x, (int)source->y, ALERT_RANGE_X, ALERT_RANGE_Y, source, ALLY_ALERT_LEVEL);
+}
+
+// Attack turns: only a few enemies may be attacking at the same time, and
+// they can't all start on the same frame. Harder difficulty = more at once.
+static int getMaxAttackers()
+{
+	return 1 + game.skill;
+}
+
+static int countActiveAttackers()
+{
+	int count = 0;
+
+	for (std::map<Entity*, EnemyAIState>::iterator it = aiState.begin() ; it != aiState.end() ; ++it)
+	{
+		if ((it->second.attackStamp != 0) && ((aiFrame - it->second.attackStamp) <= 1))
+			count++;
+	}
+
+	return count;
+}
+
+static bool canStartAttack()
+{
+	return (attackCooldown <= 0) && (countActiveAttackers() < getMaxAttackers());
+}
+
+static void beginAttack(EnemyAIState &st)
+{
+	st.attackStamp = aiFrame;
+	attackCooldown = 20 - (game.skill * 4);
+}
+
+// Fast, weak weapons fire a short burst. Slow, explosive or hard-hitting ones
+// (grenades, rockets, alien lasers...) stay single shot.
+static int getBurstSize(Entity *enemy)
+{
+	Weapon *w = enemy->currentWeapon;
+
+	if ((w->reload > 25) || (w->flags & ENT_EXPLODES))
+		return 1;
+
+	int size = 2;
+
+	if ((game.skill >= 2) && ((Math::prand() % 2) == 0))
+		size = 3;
+
+	// never let a whole burst hit for more than about 4 damage
+	int damage = (w->damage < 1) ? 1 : w->damage;
+	int maxSize = 4 / damage;
+
+	if (maxSize < 1)
+		maxSize = 1;
+
+	// the spread gun already fires 3 shots at once
+	if ((w == &weapon[WP_ALIENSPREAD]) && (maxSize > 2))
+		maxSize = 2;
+
+	if (size > maxSize)
+		size = maxSize;
+
+	return size;
+}
+
+// Called once per frame for every free enemy: notices the player gradually,
+// remembers where they were last seen and heads there.
+static void senseSurroundings(Entity *enemy, EnemyAIState &ai)
+{
+	ai.canSee = false;
+
+	bool playerActive = (player.health > -60) && (game.missionOverReason != MIS_COMPLETE);
+	float dist = fabs(enemy->x - player.x);
+	bool inRange = playerActive && isEnemyOnScreen(enemy) && (dist <= VISION_RANGE) && (fabs(enemy->y - player.y) <= 100);
+
+	if (inRange)
+		ai.canSee = hasClearShot(enemy);
+
+	float before = ai.awareness;
+	bool sensed = false;
+
+	if (enemy->flags & ENT_ALWAYSCHASE)
+	{
+		// these always know where the player is
+		if (inRange)
+		{
+			ai.awareness = AWARE_MAX;
+			sensed = true;
+		}
+	}
+	else if (ai.canSee)
+	{
+		bool behind = ((enemy->face == 0) && (player.x < enemy->x)) || ((enemy->face == 1) && (player.x > enemy->x));
+
+		// an unaware enemy doesn't notice you behind its back, unless you're very close
+		if ((!behind) || (dist < BEHIND_RANGE) || (ai.awareness >= AWARE_SUSPICIOUS))
+		{
+			float closeness = 1.0f - (dist / VISION_RANGE);
+
+			if (closeness < 0)
+				closeness = 0;
+
+			// close = fast, far = slow. Harder difficulty = quicker to notice.
+			float gain = (0.6f + (2.4f * closeness)) * (0.7f + (0.2f * game.skill));
+
+			if (behind)
+				gain *= 0.5f;
+
+			ai.awareness += gain;
+
+			if (ai.awareness > AWARE_MAX)
+				ai.awareness = AWARE_MAX;
+
+			sensed = true;
+		}
+	}
+
+	if (sensed)
+	{
+		ai.lostSight = 0;
+		ai.lastX = (int)player.x;
+		ai.lastY = (int)player.y;
+	}
+	else
+	{
+		if (ai.lostSight < 100000)
+			ai.lostSight++;
+
+		// keep looking for a while before calming down, then calm down slowly
+		int hold = ai.alerted ? ALERT_HOLD : SUSPICIOUS_HOLD;
+
+		if ((ai.lostSight > hold) && (ai.awareness > 0))
+		{
+			ai.awareness -= AWARE_DECAY;
+
+			if (ai.awareness <= 0)
+			{
+				ai.awareness = 0;
+				ai.alerted = false;
+			}
+		}
+	}
+
+	// just became fully alert: warn the others
+	if ((before < AWARE_ALERT) && (ai.awareness >= AWARE_ALERT))
+	{
+		ai.alerted = true;
+		alertNearbyEnemies(enemy);
+	}
+
+	// suspicious or alert: go to where the player was last seen
+	if (ai.awareness >= AWARE_SUSPICIOUS)
+	{
+		enemy->tx = ai.lastX;
+		enemy->ty = ai.lastY;
+	}
+}
+
 void lookForPlayer(Entity *enemy)
 {
 	// player is dead
 	if (player.health <= -60)
 		return;
-	
-	if (game.missionOverReason == MIS_COMPLETE)
-		return;
 
-	// can't fire anyway!
-	if (enemy->reload > 0)
+	if (game.missionOverReason == MIS_COMPLETE)
 		return;
 
 	int x = (int)fabs(enemy->x - player.x);
 	int y = (int)fabs(enemy->y - player.y);
 
-	// out of range
-	if (x > 480)
+	// out of range (or off screen)
+	if ((x > 480) || (!isEnemyOnScreen(enemy)))
 		return;
 
 	// can't even jump that high!
 	if (y > 100)
 		return;
 
-	// Player is in range... go for them!
-	if (enemy->flags & ENT_ALWAYSCHASE)
+	EnemyAIState &st = getAIState(enemy);
+	bool isLeader = (enemy->owner == enemy);
+
+	// winding up a shot: stand still, doAI() tells us when to fire
+	if (st.telegraph > 0)
+		return;
+
+	// leaders already checked their line of sight (and awareness) in senseSurroundings()
+	bool canSee = isLeader ? st.canSee : hasClearShot(enemy);
+
+	// followers have no awareness of their own: they always act alert
+	bool alert = (!isLeader) || (st.awareness >= AWARE_ALERT);
+
+	// lost sight of the player: give up the burst
+	if (!canSee)
+		st.burstLeft = 0;
+
+	if (!isLeader)
 	{
-		enemy->owner->tx = (int)(player.x);
-		enemy->owner->ty = (int)(player.y);
+		// Player is in range... go for them!
+		bool spotted = (enemy->flags & ENT_ALWAYSCHASE) || ((Math::prand() % (35 - game.skill)) == 0);
+
+		if (spotted)
+		{
+			enemy->owner->tx = (int)(player.x);
+			enemy->owner->ty = (int)(player.y);
+		}
 	}
-	else if ((Math::prand() % (35 - game.skill)) == 0)
-	{
-		enemy->owner->tx = (int)(player.x);
-		enemy->owner->ty = (int)(player.y);
-	}
+
+	// an alert enemy always turns to face the player it is fighting
+	if (isLeader && alert && canSee)
+		enemy->face = (player.x < enemy->x) ? 1 : 0;
 
 	// facing the wrong way
 	if ((enemy->face == 0) && (player.x < enemy->x))
 	{
+		st.burstLeft = 0;
 		return;
 	}
 
 	// still facing the wrong way
 	if ((enemy->face == 1) && (player.x > enemy->x))
 	{
+		st.burstLeft = 0;
 		return;
 	}
 
-	if (hasClearShot(enemy))
+	// can't fire while reloading, but keep chasing/turning. Only alert enemies attack.
+	if ((enemy->reload <= 0) && (alert || (enemy->flags & ENT_ALWAYSFIRES)))
 	{
-		if (enemy->flags & ENT_ALWAYSFIRES)
-		{
-			addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), 0);
-			if (enemy->currentWeapon == &weapon[WP_ALIENSPREAD])
-			{
-				addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), 2);
-				addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), -2);
-			}
-		}
-		else if ((Math::prand() % 850) <= (game.skill * 5))
-		{
-			addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), 0);
-			if (enemy->currentWeapon == &weapon[WP_ALIENSPREAD])
-			{
-				addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), 2);
-				addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), -2);
-			}
-		}
+		float aimDY = getAimDY(enemy);
 
-		if (enemy->flags & ENT_RAPIDFIRE)
+		if (canSee)
 		{
+			bool shoot = false;
+			bool fromWindup = st.fireNow;
+			bool continuing = (st.burstLeft > 0);
+
 			if (enemy->flags & ENT_ALWAYSFIRES)
 			{
-				if ((Math::prand() % 25) > game.skill * 3)
-					Math::removeBit(&enemy->flags, ENT_ALWAYSFIRES);
+				shoot = true;
 			}
-			else
+			else if (fromWindup)
 			{
-				if ((Math::prand() % 50) < game.skill * 2)
-					Math::addBit(&enemy->flags, ENT_ALWAYSFIRES);
+				shoot = true;
+			}
+			else if (continuing)
+			{
+				shoot = true;
+			}
+			else if (isLeader ? ((Math::prand() % 100) < (4 + (game.skill * 3))) : ((Math::prand() % 850) <= (game.skill * 5)))
+			{
+				// wait for our turn to attack
+				if (canStartAttack())
+				{
+					beginAttack(st);
+
+					if (isLeader)
+					{
+						// warn the player before shooting
+						st.telegraph = getWindupFrames();
+					}
+					else
+					{
+						shoot = true;
+					}
+				}
+			}
+
+			if (shoot)
+			{
+				st.fireNow = false;
+
+				addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), aimDY);
+				if (enemy->currentWeapon == &weapon[WP_ALIENSPREAD])
+				{
+					addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), aimDY + 2);
+					addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), aimDY - 2);
+				}
+
+				if (enemy->flags & ENT_ALWAYSFIRES)
+				{
+					st.burstLeft = 0;
+				}
+				else if (fromWindup || continuing)
+				{
+					bool inBurst = continuing;
+
+					if (fromWindup)
+					{
+						st.burstLeft = getBurstSize(enemy) - 1;
+						st.burstTimeout = 120;
+						inBurst = (st.burstLeft > 0);
+					}
+					else
+					{
+						st.burstLeft--;
+					}
+
+					// space the shots out, and rest once the burst is over
+					int gap = enemy->currentWeapon->reload;
+
+					if (gap < 6)
+						gap = 6;
+
+					if (enemy->reload < gap)
+						enemy->reload = gap;
+
+					if (inBurst && (st.burstLeft <= 0))
+						enemy->reload += BURST_PAUSE;
+				}
+			}
+
+			if ((enemy->flags & ENT_RAPIDFIRE) && (st.telegraph == 0))
+			{
+				if (enemy->flags & ENT_ALWAYSFIRES)
+				{
+					if ((Math::prand() % 25) > game.skill * 3)
+						Math::removeBit(&enemy->flags, ENT_ALWAYSFIRES);
+				}
+				else
+				{
+					if ((Math::prand() % 50) < game.skill * 2)
+						Math::addBit(&enemy->flags, ENT_ALWAYSFIRES);
+				}
 			}
 		}
+		else
+		{
+			if (enemy->flags & ENT_RAPIDFIRE)
+				Math::removeBit(&enemy->flags, ENT_ALWAYSFIRES);
+		}
 	}
-	else
-	{
-		if (enemy->flags & ENT_RAPIDFIRE)
-			Math::removeBit(&enemy->flags, ENT_ALWAYSFIRES);
-	}
+
+	// just started the warning (or in the middle of a burst): don't jump away
+	if ((st.telegraph > 0) || (st.burstLeft > 0))
+		return;
 
 	if ((enemy->flags & ENT_FLIES) || (enemy->flags & ENT_SWIMS) || (enemy->flags & ENT_NOJUMP))
 		return;
@@ -230,6 +778,10 @@ void lookForPlayer(Entity *enemy)
 		return;
 	}
 
+	// calm enemies don't try to get to the player
+	if (isLeader && (st.awareness < AWARE_SUSPICIOUS))
+		return;
+
 	// Jump to try and reach player (even if they are approximately level with you!)
 	if (player.y - 5 < enemy->y)
 	{
@@ -245,6 +797,33 @@ void lookForPlayer(Entity *enemy)
 
 void doAI(Entity *enemy)
 {
+	EnemyAIState &ai = getAIState(enemy);
+
+	if (ai.telegraph > 0)
+	{
+		if (--ai.telegraph == 0)
+		{
+			ai.fireNow = true;
+			ai.fireTimeout = 45;
+		}
+	}
+	else if (ai.fireNow)
+	{
+		// the shot wasn't possible yet (still reloading...): keep trying for a moment
+		if (--ai.fireTimeout <= 0)
+			ai.fireNow = false;
+	}
+
+	if (ai.burstLeft > 0)
+	{
+		if (--ai.burstTimeout <= 0)
+			ai.burstLeft = 0;
+	}
+
+	// tell the attack turns system this enemy is busy
+	if ((ai.telegraph > 0) || (ai.burstLeft > 0))
+		ai.attackStamp = aiFrame;
+
 	if (enemy->flags & ENT_GALDOV)
 	{
 		doGaldovAI(enemy);
@@ -263,7 +842,35 @@ void doAI(Entity *enemy)
 	x = x >> BRICKSHIFT;
 	y = y >> BRICKSHIFT;
 
-	if (enemy->dx == 0)
+	// notice the player (gradually) and head for where they were last seen
+	senseSurroundings(enemy, ai);
+
+	bool aware = (ai.awareness >= AWARE_SUSPICIOUS);
+
+	// An aware enemy that can't get any closer (wall in the way) tries to jump
+	// it, and gives up after a while
+	int curX = (int)enemy->x;
+
+	if (aware && (enemy->tx != curX) && (!enemy->falling) && (ai.telegraph == 0) && (ai.burstLeft == 0) && (curX == ai.prevX))
+		ai.stuck++;
+	else
+		ai.stuck = 0;
+
+	ai.prevX = curX;
+
+	if (ai.stuck == 20)
+	{
+		if ((!(enemy->flags & (ENT_FLIES|ENT_SWIMS|ENT_NOJUMP))) && map.isSolid(x, y))
+			enemy->dy = -12;
+	}
+	else if (ai.stuck > 60)
+	{
+		enemy->tx = curX;
+	}
+
+	// Calm enemies that stopped moving forget their destination. Aware ones
+	// keep it: otherwise a standing enemy could never start chasing.
+	if ((enemy->dx == 0) && (!aware))
 		enemy->tx = (int)enemy->x;
 
 	// Don't enter areas you're not supposed to
@@ -280,7 +887,13 @@ void doAI(Entity *enemy)
 
 	if ((int)enemy->x == enemy->tx)
 	{
-		if ((Math::prand() % 100) == 0)
+		// while searching for the player, look around instead of wandering off
+		if (aware && (!ai.canSee) && (ai.lostSight > 0) && ((ai.lostSight % 60) == 0))
+		{
+			enemy->face = 1 - enemy->face;
+		}
+
+		if ((!aware) && ((Math::prand() % 100) == 0))
 		{
 			enemy->tx = (int)(enemy->x + Math::rrand(-640, 640));
 			enemy->ty = (int)(enemy->y);
@@ -339,6 +952,15 @@ void doAI(Entity *enemy)
 
 		if ((int)enemy->y < enemy->ty) enemy->dy = 1;
 		if ((int)enemy->y > enemy->ty) enemy->dy = -1;
+	}
+
+	// winding up a shot or firing a burst: hold still
+	if ((ai.telegraph > 0) || (ai.burstLeft > 0))
+	{
+		enemy->dx = 0;
+
+		if ((enemy->flags & ENT_FLIES) || (enemy->flags & ENT_SWIMS))
+			enemy->dy = 0;
 	}
 
 	lookForPlayer(enemy);
@@ -407,6 +1029,20 @@ void enemyBulletCollisions(Entity *bullet)
 				{
 					enemy->tx = (int)player.x;
 					enemy->ty = (int)player.y;
+
+					// the enemy that was hit, and its neighbours, now know where the player is
+					if (!(enemy->flags & ENT_STATIC))
+					{
+						EnemyAIState &hitState = getAIState(enemy);
+
+						hitState.lastX = (int)player.x;
+						hitState.lastY = (int)player.y;
+						hitState.awareness = AWARE_MAX;
+						hitState.alerted = true;
+						hitState.lostSight = 0;
+
+						alertNearbyEnemies(enemy);
+					}
 					enemy->face = 0;
 					
 					if (player.x < enemy->x)
@@ -601,6 +1237,22 @@ void doEnemies()
 	
 	map.fightingGaldov = false;
 
+	aiFrame++;
+
+	if (attackCooldown > 0)
+		attackCooldown--;
+
+	// Hearing: a shot from the player is heard by enemies nearby, even through walls
+	if ((int)player.reload > lastPlayerReload)
+	{
+		if ((player.health > -60) && (game.missionOverReason != MIS_COMPLETE))
+		{
+			alertEnemiesNear((int)player.x, (int)player.y, HEAR_RANGE_X + (game.skill * 40), HEAR_RANGE_Y, NULL, HEAR_LEVEL);
+		}
+	}
+
+	lastPlayerReload = (int)player.reload;
+
 	int x, y, absX, absY;
 
 	while (enemy->next != NULL)
@@ -614,6 +1266,7 @@ void doEnemies()
 				if (!enemy->referenced)
 				{
 					debug(("Removing unreferenced enemy '%s'\n", enemy->name));
+					aiState.erase(enemy);
 					map.enemyList.remove(previous, enemy);
 					enemy = previous;
 				}
@@ -633,7 +1286,7 @@ void doEnemies()
 		absX = abs(x);
 		absY = abs(y);
 
-		if ((absX < 800) && (absY < 600))
+		if ((absX < ACTIVE_W) && (absY < ACTIVE_H))
 		{
 			// Fly forever
 			if (enemy->flags & ENT_FLIES)
@@ -673,7 +1326,7 @@ void doEnemies()
 
 				moveEntity(enemy);
 
-				if ((absX < 700) && (absY < 500))
+				if ((absX < DRAW_W) && (absY < DRAW_H))
 				{
 					if (enemy->flags & ENT_FIRETRAIL)
 					{
@@ -681,6 +1334,9 @@ void doEnemies()
 					}
 					
 					graphics.blit(enemy->getFaceImage(), x, y, graphics.screen, false);
+					
+					drawAwareness(enemy, x, y);
+					drawHealthBar(enemy, x, y);
 					
 					if ((enemy->dx != 0) || (enemy->flags & ENT_FLIES) || (enemy->flags & ENT_STATIC))
 					{
@@ -775,7 +1431,7 @@ void doEnemies()
 				{
 					if (enemy->dead == DEAD_ALIVE)
 					{
-						if ((absX < 800) && (absY < 600))
+						if ((absX < ACTIVE_W) && (absY < ACTIVE_H))
 						{
 							gibEnemy(enemy);
 							
@@ -792,7 +1448,7 @@ void doEnemies()
 					{
 						if (!enemy->referenced)
 						{
-							if ((absX < 800) && (absY < 600))
+							if ((absX < ACTIVE_W) && (absY < ACTIVE_H))
 							{
 								gibEnemy(enemy);
 								
@@ -803,6 +1459,7 @@ void doEnemies()
 							}
 							
 							debug(("Removing unreferenced enemy '%s'\n", enemy->name));
+							aiState.erase(enemy);
 							map.enemyList.remove(previous, enemy);
 							enemy = previous;
 						}

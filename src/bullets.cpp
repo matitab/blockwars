@@ -320,7 +320,7 @@ void doBullets()
 
 		if (bullet->owner == &player)
 		{
-			if ((x < -160) || (y < -120) || (x > 800) || (y > 600))
+			if ((x < -160) || (y < -120) || (x > graphics.screen->w + 160) || (y > graphics.screen->h + 120))
 			{
 				removeBullet(bullet);
 			}
@@ -368,3 +368,63 @@ void doBullets()
 	}
 }
 
+/*
+	Charged grenade throw: hold FIRE to charge, release to throw.
+	A quick tap throws exactly like the normal grenade.
+*/
+static int grenadeCharge = 0;
+static const int GRENADE_CHARGE_MAX = 45;      // about 0.75 s at 60 fps
+static const float GRENADE_SPEED_BOOST = 3.0f; // dx = base * (1 + 3) at full charge
+static const float GRENADE_ARC_BOOST = -2.5f;  // extra upward dy at full charge
+
+void resetGrenadeCharge()
+{
+	grenadeCharge = 0;
+}
+
+// Returns true if the current weapon is the grenade (the button was handled here)
+bool handlePlayerGrenade(bool fireHeld)
+{
+	if ((player.currentWeapon != &weapon[WP_GRENADES]) || (player.health <= 0))
+	{
+		grenadeCharge = 0;
+		return false;
+	}
+
+	if (fireHeld)
+	{
+		if ((player.reload <= 0) && (grenadeCharge < GRENADE_CHARGE_MAX))
+		{
+			grenadeCharge++;
+		}
+
+		return true;
+	}
+
+	if ((grenadeCharge > 0) && (player.reload <= 0))
+	{
+		float t = (float)grenadeCharge / GRENADE_CHARGE_MAX;
+
+		float dx = player.currentWeapon->getSpeed(player.face) * (1.0f + (GRENADE_SPEED_BOOST * t));
+		float dyExtra = GRENADE_ARC_BOOST * t;
+
+		addBullet(&player, dx, dyExtra);
+	}
+
+	grenadeCharge = 0;
+	return true;
+}
+
+void drawGrenadeCharge()
+{
+	if (grenadeCharge <= 0)
+		return;
+
+	int x = (int)(player.x - engine.playerPosX);
+	int y = (int)(player.y - engine.playerPosY) - 10;
+	int w = 24;
+	int fill = (w * grenadeCharge) / GRENADE_CHARGE_MAX;
+
+	graphics.drawRect(x - 1, y - 1, w + 2, 5, graphics.black, graphics.screen);
+	graphics.drawRect(x, y, fill, 3, (grenadeCharge >= GRENADE_CHARGE_MAX) ? graphics.red : graphics.yellow, graphics.screen);
+}

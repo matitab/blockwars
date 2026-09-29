@@ -21,6 +21,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "game.h"
 
+// Defined in CGraphics.cpp: menus use 640x480, the mission uses a bigger view
+void setGameScreenSize(int w, int h);
+
 void newGame()
 {
 	game.clear();
@@ -596,6 +599,9 @@ int doGame()
 		game.useObjectiveCheckPoint();
 	}
 
+	// From here until the mission ends the world is drawn on the bigger view
+	setGameScreenSize(GAME_VIEW_W, GAME_VIEW_H);
+
 	player.setVelocity(0, 1);
 	player.baseThink = 60;
 	player.health = MAX_HEALTH;
@@ -674,7 +680,9 @@ int doGame()
 			config.resetControl(CONTROL::MAP);
 			if (!map.isBossMission)
 			{
+				setGameScreenSize(UI_VIEW_W, UI_VIEW_H);
 				showMap((int)(player.x / 32), (int)(player.y / 32));
+				setGameScreenSize(GAME_VIEW_W, GAME_VIEW_H);
 			}
 			else
 			{
@@ -690,7 +698,9 @@ int doGame()
 		{
 			if (replayData.replayMode == REPLAY_MODE::NONE)
 			{
+				setGameScreenSize(UI_VIEW_W, UI_VIEW_H);
 				showInGameOptions();
+				setGameScreenSize(GAME_VIEW_W, GAME_VIEW_H);
 			}
 			else
 			{
@@ -786,6 +796,7 @@ int doGame()
 
 		if (engine.paused)
 		{
+			setGameScreenSize(UI_VIEW_W, UI_VIEW_H);
 			doPauseInfo();
 			audio.pause();
 		}
@@ -809,6 +820,9 @@ int doGame()
 			SDL_Delay(16);
 		}
 		
+		// no-op unless we were paused (pause screen is drawn at menu size)
+		setGameScreenSize(GAME_VIEW_W, GAME_VIEW_H);
+
 		if ((engine.keyState[SDL_SCANCODE_F3]) && (engine.cheatSkipLevel))
 		{
 			autoCompleteAllObjectives(true);
@@ -856,6 +870,9 @@ int doGame()
 		}
 		#endif
 	}
+
+	// Back to the menu size for the mission clear / game over / hub screens
+	setGameScreenSize(UI_VIEW_W, UI_VIEW_H);
 
 	if (allObjectivesCompleted())
 	{

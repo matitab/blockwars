@@ -383,7 +383,7 @@ void doItems()
 		{
 			moveEntity(item);
 		}
-		else if ((abs(x) <= 800) && (abs(y) <= 600) && (item->owner == item))
+		else if ((abs(x) <= ACTIVE_W) && (abs(y) <= ACTIVE_H) && (item->owner == item))
 		{
 			// Gravity
 			if (!(item->flags & ENT_WEIGHTLESS))

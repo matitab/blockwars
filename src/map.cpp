@@ -38,9 +38,9 @@ void drawMap()
 	int mapy = offsetY >> BRICKSHIFT;
 	int brick = 0;
 
-	for (int x = 0 ; x < 21 ; x++)
+	for (int x = 0 ; x < (graphics.screen->w / BRICKSIZE) + 2 ; x++)
 	{
-		for (int y = 0 ; y < 16 ; y++)
+		for (int y = 0 ; y < (graphics.screen->h / BRICKSIZE) + 2 ; y++)
 		{
 			brick = map.data[mapx + x][mapy + y];
 
@@ -78,9 +78,9 @@ void drawMapTopLayer()
 
 	int brick;
 
-	for (int x = 0 ; x < 21 ; x++)
+	for (int x = 0 ; x < (graphics.screen->w / BRICKSIZE) + 2 ; x++)
 	{
-		for (int y = 0 ; y < 16 ; y++)
+		for (int y = 0 ; y < (graphics.screen->h / BRICKSIZE) + 2 ; y++)
 		{
 			r.x = ((x * BRICKSIZE) - (offsetX & (BRICKSIZE - 1)));
 			r.y = ((y * BRICKSIZE) - (offsetY & (BRICKSIZE - 1)));
