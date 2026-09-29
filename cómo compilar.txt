@@ -1,0 +1,3 @@
+C:\Users\Usuario\Desktop\Proyectos\MSYS2
+cd /c/Users/Usuario/Desktop/Proyectos/blockwars
+mingw32-make -f Makefile.windows

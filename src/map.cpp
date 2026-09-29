@@ -21,6 +21,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "map.h"
 
+// The automap panel (320x240) is centred on whatever size the screen currently has
+// (menus: 1280x720). The layout below was designed for 640x480 with the panel at (160,120).
+static int mapPanelX() { return (graphics.screen->w - 320) / 2; }
+static int mapPanelY() { return (graphics.screen->h - 240) / 2; }
+
 void drawMap()
 {
 	SDL_Rect r;
@@ -179,10 +184,10 @@ void addBlips(List *blipList, int mapX, int mapY, int type)
 		x -= mapX;
 		y -= mapY;
 
-		x = (160) + (x * 5);
-		y = (120) + (y * 5);
+		x = mapPanelX() + (x * 5);
+		y = mapPanelY() + (y * 5);
 
-		if ((x >= 165) && (y >= 125) && (x <= 475) && (y <= 355))
+		if ((x >= mapPanelX() + 5) && (y >= mapPanelY() + 5) && (x <= mapPanelX() + 315) && (y <= mapPanelY() + 235))
 		{
 			blip = new RadarBlip();
 			blip->set(x, y, type);
@@ -272,6 +277,11 @@ void showMap(int centerX, int centerY)
 {
 	char string[100];
 	int x1, y1, x2, y2;
+
+	const int px = mapPanelX();
+	const int py = mapPanelY();
+	const int cx = graphics.screen->w / 2;
+	const int dy = py - 120;	// vertical shift of the original 640x480 layout
 
 	x1 = centerX - 32;
 	x2 = centerX + 32;
@@ -378,23 +388,23 @@ void showMap(int centerX, int centerY)
 
 	graphics.setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
 	graphics.setFontSize(3);
-	graphics.drawString(_(game.stageName), 320, 30, TXT_CENTERED, graphics.screen);
+	graphics.drawString(_(game.stageName), cx, 30 + dy, TXT_CENTERED, graphics.screen);
 
 	graphics.setFontSize(0);
 	
-	graphics.drawRect(160, 414, 7, 7, graphics.yellow, graphics.white, graphics.screen);
-	graphics.drawString(_("MIAs"), 175, 410, TXT_LEFT, graphics.screen);
+	graphics.drawRect(px, 414 + dy, 7, 7, graphics.yellow, graphics.white, graphics.screen);
+	graphics.drawString(_("MIAs"), px + 15, 410 + dy, TXT_LEFT, graphics.screen);
 
-	graphics.drawRect(290, 414, 7, 7, graphics.blue, graphics.white, graphics.screen);
-	graphics.drawString(_("Items"), 305, 410, TXT_LEFT, graphics.screen);
+	graphics.drawRect(px + 130, 414 + dy, 7, 7, graphics.blue, graphics.white, graphics.screen);
+	graphics.drawString(_("Items"), px + 145, 410 + dy, TXT_LEFT, graphics.screen);
 
-	graphics.drawRect(415, 414, 7, 7, graphics.red, graphics.white, graphics.screen);
-	graphics.drawString(_("Enemies"), 430, 410, TXT_LEFT, graphics.screen);
+	graphics.drawRect(px + 255, 414 + dy, 7, 7, graphics.red, graphics.white, graphics.screen);
+	graphics.drawString(_("Enemies"), px + 270, 410 + dy, TXT_LEFT, graphics.screen);
 
 	graphics.setFontSize(1);
 	snprintf(string, sizeof string, "%s - %.2d:%.2d:%.2d", _("Mission Time"), game.currentMissionHours, game.currentMissionMinutes, game.currentMissionSeconds);
-	graphics.drawString(string, 320, 60, TXT_CENTERED, graphics.screen);
-	graphics.drawString(_("Press Button to Continue..."), 320, 450, TXT_CENTERED, graphics.screen);
+	graphics.drawString(string, cx, 60 + dy, TXT_CENTERED, graphics.screen);
+	graphics.drawString(_("Press Button to Continue..."), cx, 450 + dy, TXT_CENTERED, graphics.screen);
 
 	engine.flushInput();
 	engine.clearInput();
@@ -408,8 +418,8 @@ void showMap(int centerX, int centerY)
 		graphics.updateScreen();
 		graphics.animateSprites();
 
-		graphics.drawRect(160, 120, 320, 240, graphics.black, graphics.white, graphics.screen);
-		graphics.blit(panel, 160, 120, graphics.screen, false);
+		graphics.drawRect(px, py, 320, 240, graphics.black, graphics.white, graphics.screen);
+		graphics.blit(panel, px, py, graphics.screen, false);
 
 		if ((config.isControl(CONTROL::MAP)) || (config.isControl(CONTROL::PAUSE)) || (engine.keyState[SDL_SCANCODE_ESCAPE]))
 		{

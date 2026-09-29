@@ -166,7 +166,7 @@ void showMissionClear()
 	SDL_SetAlpha(panel, 180);
 	graphics.drawRect(1, 1, panel->w - 2, panel->h - 2 , graphics.black, graphics.white, panel);
 
-	graphics.blit(panel, (640 - panel->w) / 2, (480 - panel->h) / 2, graphics.background, false);
+	graphics.blit(panel, (UI_VIEW_W - panel->w) / 2, (UI_VIEW_H - panel->h) / 2, graphics.background, false);
 
 	audio.loadSound(0, "sound/pop1");
 	audio.loadSound(1, "sound/cheer");
@@ -180,8 +180,9 @@ void showMissionClear()
 	Entity *mia = (Entity*)map.miaList.getHead();
 	Sprite *teleportStar = graphics.getSprite("TeleportStar", true);
 	char message[256];
-	int col1 = 360;
-	int col2 = 380;
+	const int cx = UI_VIEW_W / 2;	// centro horizontal del layout de menus (1280x720)
+	int col1 = cx - 10;
+	int col2 = cx + 10;
 	int count = 0;
 	int place = 0;
 	int nextStarBurst = 10 * (Math::prand() % 6);
@@ -214,7 +215,7 @@ void showMissionClear()
 	if (place > (colCount * 25))
 		place = colCount * 25;
 
-	place = (640 - place) / 2;
+	place = (UI_VIEW_W - place) / 2;
 
 	graphics.setFontSize(1);
 
@@ -305,7 +306,7 @@ void showMissionClear()
 
 		graphics.drawBackground();
 
-		graphics.blit(clear, 320, clearY, graphics.screen, true);
+		graphics.blit(clear, cx, clearY, graphics.screen, true);
 
 		Math::limitInt(&(clearY -= 5), 70, 520);
 
@@ -331,7 +332,7 @@ void showMissionClear()
 					audio.playSound(0, 0);
 
 				if (mia->x > (place + (count * 25)))
-					Math::limitFloat(&(mia->x -= 35), place + (count * 25), 640);
+					Math::limitFloat(&(mia->x -= 35), place + (count * 25), cx);
 
 				if (mia->x > place + (count * 25))
 					break;
@@ -347,7 +348,7 @@ void showMissionClear()
 				{
 					nextStarBurst = 10 * (Math::prand() % 6);
 
-					px = Math::rrand(50, 585);
+					px = Math::rrand(cx - 270, cx + 265);
 					py = Math::rrand(55, 85);
 
 					for (int i = 0 ; i < 50 ; i++)
@@ -364,7 +365,7 @@ void showMissionClear()
 
 		static Graphics::SurfaceCache cache;
 		snprintf(message, sizeof message, "%s - %.2d:%.2d:%.2d", _("Mission Time"), game.currentMissionHours, game.currentMissionMinutes, game.currentMissionSeconds);
-		graphics.drawString(message, 320, 420, true, graphics.screen, cache);
+		graphics.drawString(message, cx, 420, true, graphics.screen, cache);
 
 		engine.delay(frameLimit);
 		frameLimit = SDL_GetTicks() + 16;

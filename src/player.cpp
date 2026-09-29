@@ -26,6 +26,67 @@ void resetGrenadeCharge();
 bool handlePlayerGrenade(bool fireHeld);
 void drawGrenadeCharge();
 
+// Player ammo / clip system
+int playerAmmo = 0;
+int playerAmmoMax = 0;
+bool playerReloading = false;
+int playerReloadTotal = 0;
+static const int RELOAD_MULTIPLIER = 3;
+
+void resetPlayerAmmo()
+{
+	playerAmmoMax = player.currentWeapon->clip;
+	if (playerAmmoMax > 0)
+		playerAmmo = playerAmmoMax;
+	else
+		playerAmmo = 0;
+	playerReloading = false;
+	playerReloadTotal = 0;
+}
+
+void startPlayerReload()
+{
+	if (playerAmmoMax <= 0)
+		return;
+	playerReloadTotal = player.currentWeapon->reload * RELOAD_MULTIPLIER;
+	if (playerReloadTotal < 30)
+		playerReloadTotal = 30;
+	player.reload = playerReloadTotal;
+	playerReloading = true;
+}
+
+void updatePlayerReload()
+{
+	if (playerReloading && player.reload == 0)
+	{
+		playerReloading = false;
+		playerAmmo = playerAmmoMax;
+	}
+}
+
+void drawPlayerAmmo()
+{
+	if (playerAmmoMax <= 0)
+		return;
+
+	int x = (int)(player.x - engine.playerPosX);
+	int y = (int)(player.y - engine.playerPosY) + 36;
+	int w = 26;
+
+	if (playerReloading)
+	{
+		int fill = (w * player.reload) / playerReloadTotal;
+		graphics.drawRect(x - 1, y - 1, w + 2, 5, graphics.black, graphics.screen);
+		graphics.drawRect(x, y, fill, 3, graphics.yellow, graphics.screen);
+	}
+	else
+	{
+		int fill = (w * playerAmmo) / playerAmmoMax;
+		graphics.drawRect(x - 1, y - 1, w + 2, 5, graphics.black, graphics.screen);
+		graphics.drawRect(x, y, fill, 3, (playerAmmo <= playerAmmoMax / 4) ? graphics.red : graphics.cyan, graphics.screen);
+	}
+}
+
 int medalWorker(void *data)
 {
 	char *tname = (char*)data;
@@ -442,15 +503,30 @@ void doPlayer()
 	
 	#if DEBUG
 	if (engine.keyState[SDL_SCANCODE_1])
+	{
 		player.currentWeapon = &weapon[WP_PISTOL];
+		resetPlayerAmmo();
+	}
 	else if (engine.keyState[SDL_SCANCODE_2])
+	{
 		player.currentWeapon = &weapon[WP_MACHINEGUN];
+		resetPlayerAmmo();
+	}
 	else if (engine.keyState[SDL_SCANCODE_3])
+	{
 		player.currentWeapon = &weapon[WP_GRENADES];
+		resetPlayerAmmo();
+	}
 	else if (engine.keyState[SDL_SCANCODE_4])
+	{
 		player.currentWeapon = &weapon[WP_LASER];
+		resetPlayerAmmo();
+	}
 	else if (engine.keyState[SDL_SCANCODE_5])
+	{
 		player.currentWeapon = &weapon[WP_SPREAD];
+		resetPlayerAmmo();
+	}
 	#endif
 	
 	moveEntity(&player);
@@ -481,19 +557,34 @@ void doPlayer()
 
 	bool fireHeld = config.isControl(CONTROL::FIRE);
 
+	updatePlayerReload();
+
 	// Grenades are charged while FIRE is held and thrown on release.
 	// For every other weapon this returns false and firing works as before.
 	if (!handlePlayerGrenade(fireHeld))
 	{
 		if (fireHeld)
 		{
-			if (player.reload == 0)
+			if (player.reload == 0 && !playerReloading)
 			{
-				addBullet(&player, player.currentWeapon->getSpeed(player.face), 0);
-				if (player.currentWeapon == &weapon[WP_SPREAD])
+				if (playerAmmoMax > 0 && playerAmmo == 0)
 				{
-					addBullet(&player, player.currentWeapon->getSpeed(player.face), 2);
-					addBullet(&player, player.currentWeapon->getSpeed(player.face), -2);
+					startPlayerReload();
+				}
+				else if (playerAmmoMax == 0 || playerAmmo > 0)
+				{
+					addBullet(&player, player.currentWeapon->getSpeed(player.face), 0);
+					if (player.currentWeapon == &weapon[WP_SPREAD])
+					{
+						addBullet(&player, player.currentWeapon->getSpeed(player.face), 2);
+						addBullet(&player, player.currentWeapon->getSpeed(player.face), -2);
+					}
+					if (playerAmmoMax > 0)
+					{
+						playerAmmo--;
+						if (playerAmmo == 0)
+							startPlayerReload();
+					}
 				}
 			}
 		}
@@ -544,5 +635,6 @@ void doPlayer()
 	if (game.missionOverReason == MIS_INPROGRESS)
 	{
 		drawGrenadeCharge();
+		drawPlayerAmmo();
 	}
 }

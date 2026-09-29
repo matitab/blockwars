@@ -228,13 +228,13 @@ void doTraps()
 						audio.playSound(SND_THROW, CH_SPAWN, trap->x);
 						break;
 					case TRAP_TYPE_BARRIER:
-						if ((absX <= 640) && (absY <= 480))
+						if ((absX <= 1280) && (absY <= 720))
 						{
 							audio.playSound(SND_ELECTRICITY1 + Math::prand() % 3, CH_SPAWN, trap->x);
 						}
 						break;
 					case TRAP_TYPE_FLAME:
-						if ((absX <= 640) && (absY <= 480))
+						if ((absX <= 1280) && (absY <= 720))
 						{
 							audio.playSound(SND_FIRECRACKLE, CH_SPAWN, trap->x);
 						}
@@ -265,7 +265,7 @@ void doTraps()
 				
 					graphics.blit(trap->sprite->getCurrentFrame(), x, y, graphics.screen, true);
 
-					if ((absX <= 640) && (absY <= 480))
+					if ((absX <= 1280) && (absY <= 720))
 					{
 						if (trap->currentAction == TRAP_FIRSTACTION)
 						{

@@ -61,56 +61,60 @@ void doStatusBar()
 
 	char string[1024];
 
+	// The mission view is bigger than 640x480: anchor to the real surface size
+	const int cx = graphics.screen->w / 2;
+	const int barY = graphics.screen->h - 25;	// bottom message / boss bar
+
 	graphics.blit(graphics.infoBar, 0, 0, graphics.screen, false);
 
-	graphics.drawString(_("Health"), 50, 5, TXT_RIGHT, graphics.screen, healthCache);
+	graphics.drawString(_("Health"), 85, 5, TXT_RIGHT, graphics.screen, healthCache);
 
 	for (int i = 0 ; i < MAX_HEALTH ; i++)
 	{
 		if (i < player.health)
-			graphics.blit(graphics.getSprite("HealthBlock", true)->getCurrentFrame(), 60 + (i * 15), 7, graphics.screen, false);
+			graphics.blit(graphics.getSprite("HealthBlock", true)->getCurrentFrame(), 95 + (i * 15), 7, graphics.screen, false);
 		else
-			graphics.blit(graphics.getSprite("HealthBlockEmpty", true)->getCurrentFrame(), 60 + (i * 15), 7, graphics.screen, false);
+			graphics.blit(graphics.getSprite("HealthBlockEmpty", true)->getCurrentFrame(), 95 + (i * 15), 7, graphics.screen, false);
 	}
 
 	if (player.health <= 3)
 		if (engine.getFrameLoop() < 30)
 			for (int i = 0 ; i < player.health ; i++)
-				graphics.blit(graphics.getSprite("WarningBlock", true)->getCurrentFrame(), 60 + (i * 15), 7, graphics.screen, false);
+				graphics.blit(graphics.getSprite("WarningBlock", true)->getCurrentFrame(), 95 + (i * 15), 7, graphics.screen, false);
 
 	if ((!game.hasAquaLung) && (!engine.cheatExtras))
 	{
-		graphics.drawString(_("Oxygen"), 305, 5, TXT_RIGHT, graphics.screen, oxygenCache);
+		graphics.drawString(_("Oxygen"), 350, 5, TXT_RIGHT, graphics.screen, oxygenCache);
 
 		for (int i = 0 ; i < 7 ; i++)
 		{
 			if (i < player.oxygen)
-				graphics.blit(graphics.getSprite("OxygenBlock", true)->getCurrentFrame(), 315 + (i * 15), 7, graphics.screen, false);
+				graphics.blit(graphics.getSprite("OxygenBlock", true)->getCurrentFrame(), 360 + (i * 15), 7, graphics.screen, false);
 			else
-				graphics.blit(graphics.getSprite("OxygenBlockEmpty", true)->getCurrentFrame(), 315 + (i * 15), 7, graphics.screen, false);
+				graphics.blit(graphics.getSprite("OxygenBlockEmpty", true)->getCurrentFrame(), 360 + (i * 15), 7, graphics.screen, false);
 		}
 
 		if (player.oxygen <= 3)
 			if (engine.getFrameLoop() < 30)
 				for (int i = 0 ; i < player.oxygen ; i++)
-					graphics.blit(graphics.getSprite("WarningBlock", true)->getCurrentFrame(), 315 + (i * 15), 7, graphics.screen, false);
+					graphics.blit(graphics.getSprite("WarningBlock", true)->getCurrentFrame(), 360 + (i * 15), 7, graphics.screen, false);
 	}
 	else if ((game.hasJetPack) || (engine.cheatExtras))
 	{
-		graphics.drawString(_("Jetpack"), 305, 5, TXT_RIGHT, graphics.screen, jetpackCache);
+		graphics.drawString(_("Jetpack"), 350, 5, TXT_RIGHT, graphics.screen, jetpackCache);
 
 		for (int i = 0 ; i < 7 ; i++)
 		{
 			if (i < player.fuel)
-				graphics.blit(graphics.getSprite("OxygenBlock", true)->getCurrentFrame(), 315 + (i * 15), 7, graphics.screen, false);
+				graphics.blit(graphics.getSprite("OxygenBlock", true)->getCurrentFrame(), 360 + (i * 15), 7, graphics.screen, false);
 			else
-				graphics.blit(graphics.getSprite("OxygenBlockEmpty", true)->getCurrentFrame(), 315 + (i * 15), 7, graphics.screen, false);
+				graphics.blit(graphics.getSprite("OxygenBlockEmpty", true)->getCurrentFrame(), 360 + (i * 15), 7, graphics.screen, false);
 		}
 
 		if ((player.fuel < 3) && (!(player.flags & ENT_FLIES)))
 			if (engine.getFrameLoop() < 30)
 				for (int i = 0 ; i < player.fuel ; i++)
-					graphics.blit(graphics.getSprite("WarningBlock", true)->getCurrentFrame(), 315 + (i * 15), 7, graphics.screen, false);
+					graphics.blit(graphics.getSprite("WarningBlock", true)->getCurrentFrame(), 360 + (i * 15), 7, graphics.screen, false);
 	}
 
 	if ((map.mainBossPart == NULL || strstr(engine.message, "Aqua") || strstr(engine.message, "Jet")) && (game.missionOverReason != MIS_GAMECOMPLETE))
@@ -137,8 +141,8 @@ void doStatusBar()
 			}
 	
 			static Graphics::SurfaceCache cache;
-			graphics.blit(graphics.infoBar, 0, 455, graphics.screen, false);
-			graphics.drawString(_(engine.message), 320, 466, true, graphics.screen, cache);
+			graphics.blit(graphics.infoBar, 0, barY, graphics.screen, false);
+			graphics.drawString(_(engine.message), cx, barY + 11, true, graphics.screen, cache);
 			
 			engine.messageTime--;
 			if (engine.messageTime == -1)
@@ -154,23 +158,23 @@ void doStatusBar()
 	{
 		if (map.mainBossPart != NULL)
 		{
-			graphics.blit(graphics.infoBar, 0, 455, graphics.screen, false);
+			graphics.blit(graphics.infoBar, 0, barY, graphics.screen, false);
 			
 			static Graphics::SurfaceCache cache;
-			graphics.drawString(_(map.mainBossPart->name), 255, 460, TXT_RIGHT, graphics.screen, cache);
-			graphics.drawRect(265 - 1, 463 - 1, 200 + 2, 10 + 2, graphics.white, graphics.screen);
-			graphics.drawRect(265, 463, 200, 10, graphics.black, graphics.screen);
+			graphics.drawString(_(map.mainBossPart->name), cx - 65, barY + 5, TXT_RIGHT, graphics.screen, cache);
+			graphics.drawRect(cx - 55 - 1, barY + 8 - 1, 200 + 2, 10 + 2, graphics.white, graphics.screen);
+			graphics.drawRect(cx - 55, barY + 8, 200, 10, graphics.black, graphics.screen);
 			
 			if (map.mainBossPart->health > 0)
 			{
-				graphics.drawRect(265, 463, (int)(map.mainBossPart->health * map.bossEnergyMeterBit), 10, graphics.red, graphics.screen);
+				graphics.drawRect(cx - 55, barY + 8, (int)(map.mainBossPart->health * map.bossEnergyMeterBit), 10, graphics.red, graphics.screen);
 			}
 		}
 	}
 
 	static Graphics::SurfaceCache weaponCache;
 	snprintf(string, sizeof string, "%s %s", _("Weapon:"), _(player.currentWeapon->name));
-	graphics.drawString(string, 630, 5, TXT_RIGHT, graphics.screen, weaponCache);
+	graphics.drawString(string, graphics.screen->w - 10, 5, TXT_RIGHT, graphics.screen, weaponCache);
 	
 	if (game.skill == 3)
 	{
@@ -194,14 +198,14 @@ void doStatusBar()
 				}
 			}
 			static Graphics::SurfaceCache cache;
-			graphics.drawString(string, 320, 35, TXT_CENTERED, graphics.screen, cache);
+			graphics.drawString(string, cx, 35, TXT_CENTERED, graphics.screen, cache);
 		}
 		else
 		{
 			static Graphics::SurfaceCache cache;
 			graphics.setFontColor(0xff, 0x00, 0x00, 0x00, 0x00, 0x00);
 			graphics.setFontSize(3);
-			graphics.drawString(_("Mission Failed! Time Up!"), 320, 220, TXT_CENTERED, graphics.screen, cache);
+			graphics.drawString(_("Mission Failed! Time Up!"), cx, (graphics.screen->h / 2) - 20, TXT_CENTERED, graphics.screen, cache);
 			graphics.setFontSize(0);
 			game.canContinue = 0;
 		}
@@ -212,9 +216,15 @@ void doPauseInfo()
 {
 	int col1, col2, y;
 
-	col1 = 310;
-	col2 = 330;
-	y = 60;
+	// Layout designed for 640x480: centre it on the real surface
+	const int cx = graphics.screen->w / 2;
+	int dy = (graphics.screen->h - 480) / 2;
+	if (dy < 0)
+		dy = 0;
+
+	col1 = cx - 10;
+	col2 = cx + 10;
+	y = 60 + dy;
 
 	graphics.fade(130);
 
@@ -228,7 +238,7 @@ void doPauseInfo()
 	graphics.drawString(string, 5, 25, false, graphics.screen);
 	#endif
 
-	graphics.drawString(_("*** PAUSED ***"), 320, y, TXT_CENTERED, graphics.screen);
+	graphics.drawString(_("*** PAUSED ***"), cx, y, TXT_CENTERED, graphics.screen);
 
 	graphics.drawString(_("MIAs in Area"), col1, y += 30, TXT_RIGHT, graphics.screen);
 	snprintf(string, sizeof string, "%d", map.totalMIAs - map.foundMIAs);
@@ -246,7 +256,7 @@ void doPauseInfo()
 	snprintf(string, sizeof string, _("%d Hits"), game.maxComboHits);
 	graphics.drawString(string, col2, y, TXT_LEFT, graphics.screen);
 
-	graphics.drawString(_("++ Inventory ++"), 320, y += 40, TXT_CENTERED, graphics.screen);
+	graphics.drawString(_("++ Inventory ++"), cx, y += 40, TXT_CENTERED, graphics.screen);
 	showCarriedItems();
 
 	// Do the objectives list
@@ -313,7 +323,7 @@ void doPauseInfo()
 			if (!objective->required)
 			{
 				graphics.setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
-				graphics.drawString(_("(optional)"), 450, y, TXT_LEFT, graphics.screen);
+				graphics.drawString(_("(optional)"), cx + 130, y, TXT_LEFT, graphics.screen);
 			}
 		}
 		else
@@ -326,7 +336,7 @@ void doPauseInfo()
 	graphics.setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
 
 	snprintf(string, sizeof string, "%s - %.2d:%.2d:%.2d", _("Mission Time"), game.currentMissionHours, game.currentMissionMinutes, game.currentMissionSeconds);
-	graphics.drawString(string, 320, 430, TXT_CENTERED, graphics.screen);
+	graphics.drawString(string, cx, 430 + dy, TXT_CENTERED, graphics.screen);
 }
 
 SDL_Surface *createMusicInfo(void)
@@ -445,5 +455,5 @@ void doMusicInfo(unsigned int ticks)
 		return;
 
 	SDL_SetAlpha(panel, 255 * alpha);
-	graphics.blit(panel, 620 - panel->w, 420 - panel->h, graphics.screen, false);
+	graphics.blit(panel, graphics.screen->w - 20 - panel->w, graphics.screen->h - 60 - panel->h, graphics.screen, false);
 }

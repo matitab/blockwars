@@ -21,6 +21,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "bullets.h"
 
+extern void startPlayerReload();
+extern int playerAmmo;
+extern int playerAmmoMax;
+
 void addBullet(Entity *owner, float dx, float dy)
 {
 	if (!(owner->flags & ENT_BOSS))
@@ -403,12 +407,26 @@ bool handlePlayerGrenade(bool fireHeld)
 
 	if ((grenadeCharge > 0) && (player.reload <= 0))
 	{
+		if (playerAmmoMax > 0 && playerAmmo == 0)
+		{
+			startPlayerReload();
+			grenadeCharge = 0;
+			return true;
+		}
+
 		float t = (float)grenadeCharge / GRENADE_CHARGE_MAX;
 
 		float dx = player.currentWeapon->getSpeed(player.face) * (1.0f + (GRENADE_SPEED_BOOST * t));
 		float dyExtra = GRENADE_ARC_BOOST * t;
 
 		addBullet(&player, dx, dyExtra);
+
+		if (playerAmmoMax > 0)
+		{
+			playerAmmo--;
+			if (playerAmmo == 0)
+				startPlayerReload();
+		}
 	}
 
 	grenadeCharge = 0;

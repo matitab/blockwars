@@ -326,8 +326,8 @@ void Engine::moveMouse(int dx, int dy)
 {
 	mouseX += dx;
 	mouseY += dy;
-	Math::limitInt(&mouseX, 0, 640);
-	Math::limitInt(&mouseY, 0, 480);
+	Math::limitInt(&mouseX, 0, 1280);
+	Math::limitInt(&mouseY, 0, 720);
 }
 
 bool Engine::userAccepts()
@@ -501,6 +501,24 @@ void Engine::reportFontFailure()
 
 void Engine::setPlayerPosition(int x, int y, int limitLeft, int limitRight, int limitUp, int limitDown)
 {
+	// The map limits are defined for a 640x480 view. The real surface is bigger
+	// (800x600 in mission, 1280x720 in menus), so pull the right / bottom limits
+	// in by the extra size, otherwise the camera scrolls past the end of the map.
+	// Negative limits (-1) are used by screens that don't scroll: leave them alone.
+	if (limitRight >= 0)
+	{
+		limitRight -= (graphics.screen->w - 640);
+		if (limitRight < limitLeft)
+			limitRight = limitLeft;
+	}
+
+	if (limitDown >= 0)
+	{
+		limitDown -= (graphics.screen->h - 480);
+		if (limitDown < limitUp)
+			limitDown = limitUp;
+	}
+
 	playerPosX = x - OFFSETX;
 	playerPosY = y - OFFSETY;
 

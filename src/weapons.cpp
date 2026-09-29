@@ -21,6 +21,22 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "weapons.h"
 
+static int getDefaultClipSize(int weaponId)
+{
+	switch (weaponId)
+	{
+		case WP_PISTOL: return 12;
+		case WP_MACHINEGUN: return 30;
+		case WP_LASER: return 20;
+		case WP_GRENADES: return 5;
+		case WP_SPREAD: return 8;
+		case WP_ROCKETS: return 4;
+		case WP_PLASMARIFLE: return 25;
+		case WP_FLAMETHROWER: return 100;
+		default: return 0;
+	}
+}
+
 /**
 * Loads all the predefined weapons for the game
 */
@@ -57,6 +73,7 @@ void loadDefWeapons()
 		weapon[id].sprite[1] = graphics.getSprite(sprite[1], true);
 		weapon[id].fireSound = param[6];
 		weapon[id].flags = engine.getValueOfFlagTokens(flags);
+		weapon[id].clip = getDefaultClipSize(param[0]);
 
 		token = strtok(NULL, "\n");
 	}

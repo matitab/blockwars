@@ -132,7 +132,7 @@ void doSpawnPoints()
 				x = (int)fabs(sp->x - player.x);
 				y = (int)fabs(sp->y - player.y);
 				
-				if ((x <= 640) && (y <= 480))
+				if ((x <= 1280) && (y <= 720))
 				{
 					engine.setPlayerPosition((int)player.x + Math::rrand(-MAP_SHAKEAMOUNT, MAP_SHAKEAMOUNT), (int)player.y + Math::rrand(-MAP_SHAKEAMOUNT, MAP_SHAKEAMOUNT), map.limitLeft, map.limitRight, map.limitUp, map.limitDown);
 				}
@@ -142,7 +142,7 @@ void doSpawnPoints()
 				x = (int)fabs(sp->x - player.x);
 				y = (int)fabs(sp->y - player.y);
 				
-				if ((x <= 320) && (y <= 480))
+				if ((x <= 480) && (y <= 720))
 				{
 					engine.setPlayerPosition((int)player.x + Math::rrand(-MAP_SHAKEAMOUNT, MAP_SHAKEAMOUNT), (int)player.y + Math::rrand(-MAP_SHAKEAMOUNT, MAP_SHAKEAMOUNT), map.limitLeft, map.limitRight, map.limitUp, map.limitDown);
 				}

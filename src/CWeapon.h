@@ -27,6 +27,7 @@ class Weapon {
 		int damage, dx, dy, reload, health;
 		int flags;
 		int fireSound;
+		int clip;
 		Sprite *sprite[2];
 
 	Weapon();

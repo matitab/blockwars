@@ -73,7 +73,7 @@ void loadResources()
 	graphics.quickSprite("optionsBackground", graphics.loadImage("gfx/main/optionsBackground.png"));
 
 	SDL_FillRect(graphics.screen, NULL, graphics.black);
-	graphics.drawString(_("Loading..."), 320, 440, TXT_CENTERED, graphics.screen);
+	graphics.drawString(_("Loading..."), 320 + ((graphics.screen->w - 640) / 2), 440 + ((graphics.screen->h - 480) / 2), TXT_CENTERED, graphics.screen);
 	graphics.showLoading(0, 0);
 	graphics.updateScreen();
 	

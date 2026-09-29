@@ -21,7 +21,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "game.h"
 
-// Defined in CGraphics.cpp: menus use 640x480, the mission uses a bigger view
+extern void resetPlayerAmmo();
+
+// Defined in CGraphics.cpp: menus use 1280x720, the mission uses a bigger view
 void setGameScreenSize(int w, int h);
 
 void newGame()
@@ -41,7 +43,11 @@ void showInGameOptions()
 		return graphics.showErrorAndExit(ERR_FILE, _("data/inGameWidgets"));
 	}
 
-	graphics.drawRect(120, 100, 400, 300, graphics.black, graphics.white, graphics.screen);
+	// The menu box was laid out for 640x480 (120,100): centre it on the real surface
+	const int boxX = (graphics.screen->w - 400) / 2;
+	const int boxY = (graphics.screen->h - 300) / 2;
+
+	graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
 
 	int cont, options, escape, quit, escapeyes, escapeno, warnno, warnyes, quitno, quityes, train, trainno, trainyes, restart, restartno, restartyes;
 	cont = options = escape = quit = escapeyes = escapeno = warnno = warnyes = quitno = quityes = train = trainno = trainyes = restart = restartno = restartyes = 0;
@@ -114,7 +120,7 @@ void showInGameOptions()
 
 		if (menuSound)
 		{
-			graphics.drawRect(120, 100, 400, 300, graphics.black, graphics.white, graphics.screen);
+			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
 			drawWidgets();
 			audio.playMenuSound(menuSound);
 		}
@@ -139,7 +145,7 @@ void showInGameOptions()
 				engine.highlightWidget("escapeno");
 			}
 
-			graphics.drawRect(120, 100, 400, 300, graphics.black, graphics.white, graphics.screen);
+			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
 			drawWidgets();
 			escape = 0;
 		}
@@ -179,7 +185,7 @@ void showInGameOptions()
 				engine.showWidget("quit", false);
 			}
 			
-			graphics.drawRect(120, 100, 400, 300, graphics.black, graphics.white, graphics.screen);
+			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
 			drawWidgets();
 			quitno = trainno = warnno = escapeno = restartno = 0;
 		}
@@ -190,7 +196,7 @@ void showInGameOptions()
 			engine.showWidgetGroup("quitconf", true);
 			engine.highlightWidget("quitno");
 
-			graphics.drawRect(120, 100, 400, 300, graphics.black, graphics.white, graphics.screen);
+			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
 			drawWidgets();
 			quit = 0;
 		}
@@ -201,7 +207,7 @@ void showInGameOptions()
 			engine.showWidgetGroup("trainconf", true);
 			engine.highlightWidget("trainno");
 
-			graphics.drawRect(120, 100, 400, 300, graphics.black, graphics.white, graphics.screen);
+			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
 			drawWidgets();
 			train = 0;
 		}
@@ -212,7 +218,7 @@ void showInGameOptions()
 			engine.showWidgetGroup("restartconf", true);
 			engine.highlightWidget("restartno");
 
-			graphics.drawRect(120, 100, 400, 300, graphics.black, graphics.white, graphics.screen);
+			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
 			drawWidgets();
 			restart = 0;
 		}
@@ -325,10 +331,13 @@ int gameover()
 		if (menuSound)
 			audio.playMenuSound(menuSound);
 
+		// The screen size changed since the mission: recompute the camera for it
+		engine.setPlayerPosition((int)player.x, (int)player.y, map.limitLeft, map.limitRight, map.limitUp, map.limitDown);
+
 		doGameStuff();
 		drawMapTopLayer();
 
-		graphics.blit(gameover, 320, 240, graphics.screen, true);
+		graphics.blit(gameover, graphics.screen->w / 2, graphics.screen->h / 2, graphics.screen, true);
 
 		if (engine.userAccepts())
 		{
@@ -507,8 +516,8 @@ void showMissionInformation()
 
 		doGameStuff();
 		drawMapTopLayer();
-		graphics.blit(panelBack, 320, 220, graphics.screen, true);
-		graphics.blit(panel, 320, 220, graphics.screen, true);
+		graphics.blit(panelBack, graphics.screen->w / 2, (graphics.screen->h / 2) - 20, graphics.screen, true);
+		graphics.blit(panel, graphics.screen->w / 2, (graphics.screen->h / 2) - 20, graphics.screen, true);
 
 		engine.delay(frameLimit);
 		frameLimit = SDL_GetTicks() + 16;
@@ -614,6 +623,7 @@ int doGame()
 	else
 	{
 		player.currentWeapon = &weapon[WP_PISTOL];
+		resetPlayerAmmo();
 	}
 
 	game.resetMissionOver();

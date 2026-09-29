@@ -299,13 +299,13 @@ enum {
 #define BRICKSIZE  	32
 #define BRICKSHIFT	5
 
-// Camera centre follows the real surface size (the game view can differ from the 640x480 menus)
+// Camera centre follows the real surface size (the game view can differ from the 1280x720 menus)
 #define OFFSETX (graphics.screen->w / 2)
 #define OFFSETY (graphics.screen->h / 2)
 
-// Menus and overlays are laid out for 640x480, the in-mission view is larger
-#define UI_VIEW_W	640
-#define UI_VIEW_H	480
+// Menus and overlays are laid out for 1280x720, the in-mission view is larger
+#define UI_VIEW_W	1280
+#define UI_VIEW_H	720
 #define GAME_VIEW_W	800
 #define GAME_VIEW_H	600
 

@@ -146,9 +146,9 @@ void Graphics::mapColors()
 	fontForeground.r = fontForeground.g = fontForeground.b = 0xff;
 	fontBackground.r = fontBackground.g = fontBackground.b = 0x00;
 
-	fadeBlack = alphaRect(640, 480, 0x00, 0x00, 0x00);
+	fadeBlack = alphaRect(1280, 720, 0x00, 0x00, 0x00);
 
-	infoBar = alphaRect(640, 25, 0x00, 0x00, 0x00);
+	infoBar = alphaRect(1280, 38, 0x00, 0x00, 0x00);
 	
 	medalMessage = NULL;
 }
@@ -768,8 +768,8 @@ void Graphics::blit(SDL_Surface *image, int x, int y, SDL_Surface *dest, bool ce
 		return showErrorAndExit("graphics::blit() - NULL pointer", SDL_GetError());
 	}
 
-	int destW = dest ? dest->w : 640;
-	int destH = dest ? dest->h : 480;
+	int destW = dest ? dest->w : 1280;
+	int destH = dest ? dest->h : 720;
 
 	if ((x < -image->w) || (x > destW + image->w))
 		return;
@@ -798,7 +798,7 @@ void Graphics::drawBackground()
 {
 	if (background != NULL)
 	{
-		// The backgrounds are 640x480: stretch them when the view is bigger
+		// The backgrounds are 1280x720: stretch them when the view is bigger
 		if ((background->w == screen->w) && (background->h == screen->h))
 			blit(background, 0, 0, screen, false);
 		else
@@ -1115,8 +1115,8 @@ void Graphics::showLoading(int amount, int max)
 
 	Math::limitInt(&(currentLoading += amount), 0, max);
 
-	drawRect(120, 420, 400, 10, black, white, screen);
-	drawRect(121, 421, currentLoading, 8, red, screen);
+	drawRect(120 + ((screen->w - 640) / 2), 420 + ((screen->h - 480) / 2), 400, 10, black, white, screen);
+	drawRect(121 + ((screen->w - 640) / 2), 421 + ((screen->h - 480) / 2), currentLoading, 8, red, screen);
 	#else
 	(void)amount;
 	(void)max;
@@ -1126,16 +1126,16 @@ void Graphics::showLoading(int amount, int max)
 void Graphics::showLicenseErrorAndExit()
 {
 	setFontSize(3); setFontColor(0xff, 0x00, 0x00, 0x00, 0x00, 0x00);
-	drawString("License Agreement Missing", 320, 50, true, screen);
+	drawString("License Agreement Missing", 320 + ((screen->w - 640) / 2), 50 + ((screen->h - 480) / 2), true, screen);
 	
 	setFontSize(1); setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
 
-	drawString("The GNU General Public License was not found.", 320, 180, true, screen);
-	drawString("It could either not be properly loaded or has been removed.", 320, 220, true, screen);
-	drawString("Blob Wars : Metal Blob Solid will not run with the license missing.", 320, 260, true, screen);
+	drawString("The GNU General Public License was not found.", 320 + ((screen->w - 640) / 2), 180 + ((screen->h - 480) / 2), true, screen);
+	drawString("It could either not be properly loaded or has been removed.", 320 + ((screen->w - 640) / 2), 220 + ((screen->h - 480) / 2), true, screen);
+	drawString("Blob Wars : Metal Blob Solid will not run with the license missing.", 320 + ((screen->w - 640) / 2), 260 + ((screen->h - 480) / 2), true, screen);
 	
-	drawString("Blob Wars : Metal Blob Solid will now exit", 320, 420, true, screen);
-	drawString("Press Escape to continue", 320, 450, true, screen);
+	drawString("Blob Wars : Metal Blob Solid will now exit", 320 + ((screen->w - 640) / 2), 420 + ((screen->h - 480) / 2), true, screen);
+	drawString("Press Escape to continue", 320 + ((screen->w - 640) / 2), 450 + ((screen->h - 480) / 2), true, screen);
 
 	engine->flushInput();
 
@@ -1163,27 +1163,27 @@ void Graphics::showErrorAndExit(const char *error, const char *param)
 	snprintf(message, sizeof message, error, param);
 
 	setFontSize(3); setFontColor(0xff, 0x00, 0x00, 0x00, 0x00, 0x00);
-	drawString("An unforseen error has occurred", 320, 50, true, screen);
+	drawString("An unforseen error has occurred", 320 + ((screen->w - 640) / 2), 50 + ((screen->h - 480) / 2), true, screen);
 	setFontSize(1); setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
-	drawString(message, 320, 90, true, screen);
+	drawString(message, 320 + ((screen->w - 640) / 2), 90 + ((screen->h - 480) / 2), true, screen);
 
-	drawString("You may wish to try the following,", 50, 150, false, screen);
+	drawString("You may wish to try the following,", 50 + ((screen->w - 640) / 2), 150 + ((screen->h - 480) / 2), false, screen);
 
 	setFontSize(0);
-	drawString("1) Try reinstalling the game.", 75, 190, false, screen);
-	drawString("2) Ensure you have SDL 1.2.5 or greater installed.", 75, 210, false, screen);
-	drawString("3) Ensure you have the latest versions of additional required SDL libraries.", 75, 230, false, screen);
-	drawString("4) Install using an RPM if you originally built the game from source", 75, 250, false, screen);
-	drawString("or try building from source if you installed using an RPM.", 75, 270, false, screen);
-	drawString("5) Visit http://www.parallelrealities.co.uk/blobWars.php and check for updates.", 75, 290, false, screen);
+	drawString("1) Try reinstalling the game.", 75 + ((screen->w - 640) / 2), 190 + ((screen->h - 480) / 2), false, screen);
+	drawString("2) Ensure you have SDL 1.2.5 or greater installed.", 75 + ((screen->w - 640) / 2), 210 + ((screen->h - 480) / 2), false, screen);
+	drawString("3) Ensure you have the latest versions of additional required SDL libraries.", 75 + ((screen->w - 640) / 2), 230 + ((screen->h - 480) / 2), false, screen);
+	drawString("4) Install using an RPM if you originally built the game from source", 75 + ((screen->w - 640) / 2), 250 + ((screen->h - 480) / 2), false, screen);
+	drawString("or try building from source if you installed using an RPM.", 75 + ((screen->w - 640) / 2), 270 + ((screen->h - 480) / 2), false, screen);
+	drawString("5) Visit http://www.parallelrealities.co.uk/blobWars.php and check for updates.", 75 + ((screen->w - 640) / 2), 290 + ((screen->h - 480) / 2), false, screen);
 
 	setFontSize(1);
 
-	drawString("If problems persist contact Parallel Realities. Please be aware however that we will not", 320, 360, true, screen);
-	drawString("be able to assist in cases where the code or data has been modified.", 320, 380, true, screen);
+	drawString("If problems persist contact Parallel Realities. Please be aware however that we will not", 320 + ((screen->w - 640) / 2), 360 + ((screen->h - 480) / 2), true, screen);
+	drawString("be able to assist in cases where the code or data has been modified.", 320 + ((screen->w - 640) / 2), 380 + ((screen->h - 480) / 2), true, screen);
 
-	drawString("Blob Wars : Metal Blob Solid will now exit", 320, 420, true, screen);
-	drawString("Press Escape to continue", 320, 450, true, screen);
+	drawString("Blob Wars : Metal Blob Solid will now exit", 320 + ((screen->w - 640) / 2), 420 + ((screen->h - 480) / 2), true, screen);
+	drawString("Press Escape to continue", 320 + ((screen->w - 640) / 2), 450 + ((screen->h - 480) / 2), true, screen);
 
 	engine->flushInput();
 
@@ -1202,16 +1202,16 @@ void Graphics::showErrorAndExit(const char *error, const char *param)
 void Graphics::showRootWarning()
 {
 	setFontSize(3); setFontColor(0xff, 0x00, 0x00, 0x00, 0x00, 0x00);
-	drawString("CAUTION - RUNNING AS ROOT USER!", 320, 50, true, screen);
+	drawString("CAUTION - RUNNING AS ROOT USER!", 320 + ((screen->w - 640) / 2), 50 + ((screen->h - 480) / 2), true, screen);
 	
 	setFontSize(1); setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
 
-	drawString("WARNING - You appear to be running the game as the root user!", 320, 180, true, screen);
-	drawString("This is not recommended and is it strongly advised that you do not run", 320, 220, true, screen);
-	drawString("the game as root. You may still continue but consider running as regular user in future!", 320, 260, true, screen);
+	drawString("WARNING - You appear to be running the game as the root user!", 320 + ((screen->w - 640) / 2), 180 + ((screen->h - 480) / 2), true, screen);
+	drawString("This is not recommended and is it strongly advised that you do not run", 320 + ((screen->w - 640) / 2), 220 + ((screen->h - 480) / 2), true, screen);
+	drawString("the game as root. You may still continue but consider running as regular user in future!", 320 + ((screen->w - 640) / 2), 260 + ((screen->h - 480) / 2), true, screen);
 	
-	drawString("Press Space to Exit", 320, 420, true, screen);
-	drawString("Press Escape to Continue", 320, 450, true, screen);
+	drawString("Press Space to Exit", 320 + ((screen->w - 640) / 2), 420 + ((screen->h - 480) / 2), true, screen);
+	drawString("Press Escape to Continue", 320 + ((screen->w - 640) / 2), 450 + ((screen->h - 480) / 2), true, screen);
 
 	engine->flushInput();
 
@@ -1235,7 +1235,7 @@ void Graphics::showRootWarning()
 
 /*
 	Changes the size of the drawing surface (and the texture / logical size that show it).
-	Menus are laid out for 640x480, the in-mission view uses a bigger area.
+	Menus are laid out for 1280x720, the in-mission view uses a bigger area.
 	The old contents are lost: the caller redraws everything afterwards.
 */
 extern Graphics graphics;

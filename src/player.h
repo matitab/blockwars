@@ -41,3 +41,9 @@ extern MedalServer medalServer;
 
 extern Entity player;
 extern Weapon weapon[MAX_WEAPONS];
+
+extern void resetPlayerAmmo();
+extern int playerAmmo;
+extern int playerAmmoMax;
+extern bool playerReloading;
+extern int playerReloadTotal;

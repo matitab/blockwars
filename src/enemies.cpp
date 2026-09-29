@@ -40,8 +40,12 @@ struct EnemyAIState
 	int burstLeft;   // shots still to fire in the current burst
 	int burstTimeout; // safety: a burst can never last longer than this
 	unsigned int attackStamp; // last frame this enemy was busy attacking (attack turns)
+	int rank;        // RANK_SOLDIER / RANK_VETERAN / RANK_SERGEANT
+	Entity *squadLeader; // the sergeant this soldier follows (NULL = none)
+	int confused;    // frames left of disorientation after the sergeant died
+	int panicDir;    // direction (-1 / 1) it stumbles in while confused
 
-	EnemyAIState() : telegraph(0), fireNow(false), fireTimeout(0), awareness(0), lostSight(0), alerted(false), canSee(false), lastX(0), lastY(0), prevX(0), stuck(0), maxHealth(0), burstLeft(0), burstTimeout(0), attackStamp(0) {}
+	EnemyAIState() : telegraph(0), fireNow(false), fireTimeout(0), awareness(0), lostSight(0), alerted(false), canSee(false), lastX(0), lastY(0), prevX(0), stuck(0), maxHealth(0), burstLeft(0), burstTimeout(0), attackStamp(0), rank(0), squadLeader(NULL), confused(0), panicDir(1) {}
 };
 
 static std::map<Entity*, EnemyAIState> aiState;
@@ -55,7 +59,7 @@ static const float AWARE_ALERT = 100.0f;
 static const float AWARE_DECAY = 0.16f;  // lost per frame once the hold time is over
 static const int ALERT_HOLD = 360;       // frames an alerted enemy keeps looking before calming down
 static const int SUSPICIOUS_HOLD = 120;  // same for an enemy that was only suspicious
-static const int VISION_RANGE = 480;     // farthest they can notice you
+static const int VISION_RANGE = 720;     // farthest they can notice you
 static const int BEHIND_RANGE = 96;      // they only notice you behind their back this close
 static const float ALLY_ALERT_LEVEL = 65.0f;  // what allies get told when someone spots you / is shot
 static const float HEAR_LEVEL = 45.0f;        // what a nearby gunshot does
@@ -72,6 +76,53 @@ static int lastPlayerReload = 0;        // used to notice when the player fires
 static EnemyAIState &getAIState(Entity *enemy)
 {
 	return aiState[enemy];
+}
+
+// ---------------------------------------------------------------------------
+// Ranks & squads. Only one-hit blobs on the ground can be promoted.
+//   Soldier : 1 hp, as before
+//   Veteran : 3 hp, longer bursts, shorter warning, always shows a health bar
+//   Sergeant: 5 hp, leads a squad. When it spots you (or is shot) the whole squad
+//             goes to full alert. Kill it and the squad panics for a few seconds.
+// ---------------------------------------------------------------------------
+static const int RANK_SOLDIER = 0;
+static const int RANK_VETERAN = 1;
+static const int RANK_SERGEANT = 2;
+
+static const int VETERAN_HEALTH = 3;
+static const int SERGEANT_HEALTH = 5;
+static const int MAX_SERGEANTS = 5;        // alive at the same time on a map
+static const int SQUAD_PANIC_FRAMES = 150; // how long the squad is lost without its leader
+
+// Chances (in %) are re-rolled for every enemy that is placed. Tune to taste.
+static int getVeteranChance()
+{
+	int chance = 10 + (game.stagesCleared * 3) + (game.skill * 4);
+
+	return (chance > 45) ? 45 : chance;
+}
+
+static int getSergeantChance()
+{
+	// no sergeants in the very first missions
+	if (game.stagesCleared < 2)
+		return 0;
+
+	int chance = 6 + ((game.stagesCleared - 2) * 2) + (game.skill * 2);
+
+	return (chance > 25) ? 25 : chance;
+}
+
+// Forget everything about an enemy that is being removed (and whoever followed it)
+static void forgetEnemy(Entity *enemy)
+{
+	aiState.erase(enemy);
+
+	for (std::map<Entity*, EnemyAIState>::iterator it = aiState.begin() ; it != aiState.end() ; ++it)
+	{
+		if (it->second.squadLeader == enemy)
+			it->second.squadLeader = NULL;
+	}
 }
 
 // True when (part of) the enemy is inside the visible area. Enemies that are
@@ -172,7 +223,7 @@ static void drawHealthBar(Entity *enemy, int x, int y)
 
 	int maxHealth = it->second.maxHealth;
 
-	if (enemy->health >= maxHealth)
+	if ((enemy->health >= maxHealth) && (it->second.rank == RANK_SOLDIER))
 		return;
 
 	int w = enemy->width;
@@ -201,13 +252,50 @@ static void drawHealthBar(Entity *enemy, int x, int y)
 	graphics.drawRect(bx, by, fill, 3, color, graphics.screen);
 }
 
-// Higher difficulty = shorter warning
-static int getWindupFrames()
+// Small chevrons next to the head: one = veteran, two = sergeant
+static void drawChevron(int px, int py, Uint32 color)
 {
-	int frames = 30 - (game.skill * 4);
+	static const char * const rows[3] = {"..#..", ".#.#.", "#...#"};
 
-	if (frames < 12)
-		frames = 12;
+	for (int r = 0 ; r < 3 ; r++)
+	{
+		for (int c = 0 ; c < 5 ; c++)
+		{
+			if (rows[r][c] == '#')
+				graphics.drawRect(px + (c * 2), py + (r * 2), 2, 2, color, graphics.screen);
+		}
+	}
+}
+
+static void drawRankBadge(Entity *enemy, int x, int y)
+{
+	if (enemy->health <= 0)
+		return;
+
+	std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+	if ((it == aiState.end()) || (it->second.rank == RANK_SOLDIER))
+		return;
+
+	int px = x - 13;
+	int py = y - 8;
+	int count = (it->second.rank == RANK_SERGEANT) ? 2 : 1;
+	Uint32 color = (count == 2) ? SDL_MapRGB(graphics.screen->format, 255, 140, 0) : graphics.yellow;
+
+	for (int i = 0 ; i < count ; i++)
+	{
+		drawChevron(px + 1, py + 1 - (i * 5), graphics.black);
+		drawChevron(px, py - (i * 5), color);
+	}
+}
+
+// Higher difficulty = shorter warning. Higher rank = shorter warning too.
+static int getWindupFrames(int rank)
+{
+	int frames = 30 - (game.skill * 4) - (rank * 4);
+
+	if (frames < 10)
+		frames = 10;
 
 	return frames;
 }
@@ -246,18 +334,18 @@ Entity *getEnemy(const char *name)
 	return NULL;
 }
 
-void addEnemy(const char *name, int x, int y, int flags)
+static Entity *spawnEnemyEntity(const char *name, int x, int y, int flags)
 {
 	Entity *defEnemy = getDefinedEnemy(name);
 
 	if (defEnemy == NULL)
 	{
 		debug(("ERROR : COULDN'T FIND ENEMY '%s'!\n", name));
-		return;
+		return NULL;
 	}
 
 	Entity *enemy = new Entity();
-	aiState.erase(enemy);
+	forgetEnemy(enemy);
 	enemy->setName(defEnemy->name);
 	enemy->setSprites(defEnemy->sprite[0], defEnemy->sprite[1], defEnemy->sprite[2]);
 	enemy->currentWeapon = defEnemy->currentWeapon;
@@ -281,6 +369,133 @@ void addEnemy(const char *name, int x, int y, int flags)
 	}
 
 	map.addEnemy(enemy);
+
+	return enemy;
+}
+
+static int countLiveRank(int rank)
+{
+	int count = 0;
+	Entity *e = (Entity*)map.enemyList.getHead();
+
+	while (e->next != NULL)
+	{
+		e = (Entity*)e->next;
+
+		if (e->health <= 0)
+			continue;
+
+		std::map<Entity*, EnemyAIState>::iterator it = aiState.find(e);
+
+		if ((it != aiState.end()) && (it->second.rank == rank))
+			count++;
+	}
+
+	return count;
+}
+
+// Solid ground close below, and nothing solid or liquid where the soldier would stand
+static bool isGoodEscortSpot(int px, int py)
+{
+	int tx = (px + 10) >> BRICKSHIFT;
+	int ty = (py + 10) >> BRICKSHIFT;
+
+	if ((tx < 1) || (ty < 1) || (tx >= (MAPWIDTH - 1)) || (ty >= (MAPHEIGHT - 6)))
+		return false;
+
+	if (map.isSolid(tx, ty) || map.isLiquid(tx, ty))
+		return false;
+
+	for (int i = 1 ; i <= 4 ; i++)
+	{
+		if (map.isLiquid(tx, ty + i))
+			return false;
+
+		if (map.isSolid(tx, ty + i))
+			return true;
+	}
+
+	return false;
+}
+
+// Surround a new sergeant with a few soldiers
+static void spawnEscorts(Entity *leader)
+{
+	static const char * const names[3] = {"Pistol Blob", "Pistol Blob", "Machine Gun Blob"};
+	static const int offsets[6] = {-40, 40, -72, 72, -104, 104};
+
+	int wanted = 2 + ((game.skill >= 2) ? 1 : 0);
+	int placed = 0;
+
+	for (int i = 0 ; (i < 6) && (placed < wanted) ; i++)
+	{
+		int nx = (int)leader->x + offsets[i];
+		int ny = (int)leader->y;
+
+		if (!isGoodEscortSpot(nx, ny))
+			continue;
+
+		Entity *soldier = spawnEnemyEntity(names[Math::prand() % 3], nx, ny, 0);
+
+		if (soldier != NULL)
+		{
+			getAIState(soldier).squadLeader = leader;
+			placed++;
+		}
+	}
+}
+
+// Decide the rank of a newly placed enemy (the name never changes, so objectives still count it)
+static void assignRank(Entity *enemy, int flags)
+{
+	if (map.isBossMission)
+		return;
+
+	if (enemy->health > 1)
+		return;
+
+	if (enemy->flags & (ENT_FLIES|ENT_SWIMS|ENT_STATIC|ENT_NOMOVE|ENT_BOSS|ENT_GALDOV|ENT_INANIMATE|ENT_IMMUNE))
+		return;
+
+	EnemyAIState &st = getAIState(enemy);
+
+	// randomly appearing enemies can be veterans, but never lead a squad
+	bool spawned = ((flags & ENT_SPAWNED) != 0);
+	int sergeantChance = spawned ? 0 : getSergeantChance();
+	int roll = Math::prand() % 100;
+
+	if (roll < sergeantChance)
+	{
+		if (countLiveRank(RANK_SERGEANT) < MAX_SERGEANTS)
+		{
+			st.rank = RANK_SERGEANT;
+			enemy->health = SERGEANT_HEALTH;
+			enemy->value *= 4;
+			st.maxHealth = enemy->health;
+			spawnEscorts(enemy);
+			return;
+		}
+
+		roll = sergeantChance; // too many sergeants already: make it a veteran
+	}
+
+	if (roll < (sergeantChance + getVeteranChance()))
+	{
+		st.rank = RANK_VETERAN;
+		enemy->health = VETERAN_HEALTH;
+		enemy->value *= 2;
+		st.maxHealth = enemy->health;
+	}
+}
+
+void addEnemy(const char *name, int x, int y, int flags)
+{
+	Entity *enemy = spawnEnemyEntity(name, x, y, flags);
+
+	if (enemy != NULL)
+	{
+		assignRank(enemy, flags);
+	}
 }
 
 bool hasClearShot(Entity *enemy)
@@ -425,7 +640,40 @@ static void alertEnemiesNear(int cx, int cy, int rangeX, int rangeY, Entity *ski
 // When an enemy spots the player (or gets shot), nearby enemies hear about it too
 static void alertNearbyEnemies(Entity *source)
 {
-	alertEnemiesNear((int)source->x, (int)source->y, ALERT_RANGE_X, ALERT_RANGE_Y, source, ALLY_ALERT_LEVEL);
+	// a sergeant shouts further
+	float scale = (getAIState(source).rank == RANK_SERGEANT) ? 1.5f : 1.0f;
+
+	alertEnemiesNear((int)source->x, (int)source->y, (int)(ALERT_RANGE_X * scale), (int)(ALERT_RANGE_Y * scale), source, ALLY_ALERT_LEVEL);
+}
+
+// A sergeant that spots the player (or is shot) puts its whole squad on full alert
+static void alertSquad(Entity *leader)
+{
+	Entity *other = (Entity*)map.enemyList.getHead();
+
+	while (other->next != NULL)
+	{
+		other = (Entity*)other->next;
+
+		if ((other == leader) || (other->health <= 0))
+			continue;
+
+		std::map<Entity*, EnemyAIState>::iterator it = aiState.find(other);
+
+		if ((it == aiState.end()) || (it->second.squadLeader != leader) || (it->second.confused > 0))
+			continue;
+
+		EnemyAIState &st = it->second;
+
+		st.awareness = AWARE_MAX;
+		st.alerted = true;
+		st.lostSight = 0;
+		st.lastX = (int)player.x;
+		st.lastY = (int)player.y;
+
+		other->tx = (int)player.x;
+		other->ty = (int)player.y;
+	}
 }
 
 // Attack turns: only a few enemies may be attacking at the same time, and
@@ -472,6 +720,9 @@ static int getBurstSize(Entity *enemy)
 
 	if ((game.skill >= 2) && ((Math::prand() % 2) == 0))
 		size = 3;
+
+	if (getAIState(enemy).rank == RANK_VETERAN)
+		size++;
 
 	// never let a whole burst hit for more than about 4 damage
 	int damage = (w->damage < 1) ? 1 : w->damage;
@@ -573,6 +824,9 @@ static void senseSurroundings(Entity *enemy, EnemyAIState &ai)
 	{
 		ai.alerted = true;
 		alertNearbyEnemies(enemy);
+
+		if (ai.rank == RANK_SERGEANT)
+			alertSquad(enemy);
 	}
 
 	// suspicious or alert: go to where the player was last seen
@@ -596,7 +850,7 @@ void lookForPlayer(Entity *enemy)
 	int y = (int)fabs(enemy->y - player.y);
 
 	// out of range (or off screen)
-	if ((x > 480) || (!isEnemyOnScreen(enemy)))
+	if ((x > 720) || (!isEnemyOnScreen(enemy)))
 		return;
 
 	// can't even jump that high!
@@ -608,6 +862,10 @@ void lookForPlayer(Entity *enemy)
 
 	// winding up a shot: stand still, doAI() tells us when to fire
 	if (st.telegraph > 0)
+		return;
+
+	// the sergeant died: too confused to fight
+	if (st.confused > 0)
 		return;
 
 	// leaders already checked their line of sight (and awareness) in senseSurroundings()
@@ -683,7 +941,7 @@ void lookForPlayer(Entity *enemy)
 					if (isLeader)
 					{
 						// warn the player before shooting
-						st.telegraph = getWindupFrames();
+						st.telegraph = getWindupFrames(st.rank);
 					}
 					else
 					{
@@ -847,6 +1105,29 @@ void doAI(Entity *enemy)
 
 	bool aware = (ai.awareness >= AWARE_SUSPICIOUS);
 
+	// a squad soldier whose sergeant just died is lost for a few seconds
+	if ((ai.squadLeader != NULL) && (ai.squadLeader->health <= 0))
+	{
+		ai.squadLeader = NULL;
+		ai.confused = SQUAD_PANIC_FRAMES;
+		ai.panicDir = (player.x < enemy->x) ? 1 : -1;
+		ai.telegraph = 0;
+		ai.fireNow = false;
+		ai.burstLeft = 0;
+	}
+
+	if (ai.confused > 0)
+	{
+		ai.confused--;
+
+		if (((ai.confused % 45) == 0) && ((Math::prand() % 2) == 0))
+			ai.panicDir = -ai.panicDir;
+
+		enemy->tx = (int)enemy->x + (ai.panicDir * 100);
+		enemy->ty = (int)enemy->y;
+		aware = true; // keep the destination instead of forgetting it
+	}
+
 	// An aware enemy that can't get any closer (wall in the way) tries to jump
 	// it, and gives up after a while
 	int curX = (int)enemy->x;
@@ -895,7 +1176,10 @@ void doAI(Entity *enemy)
 
 		if ((!aware) && ((Math::prand() % 100) == 0))
 		{
-			enemy->tx = (int)(enemy->x + Math::rrand(-640, 640));
+			if ((ai.squadLeader != NULL) && (ai.squadLeader->health > 0))
+				enemy->tx = (int)(ai.squadLeader->x + Math::rrand(-96, 96)); // stay with the squad
+			else
+				enemy->tx = (int)(enemy->x + Math::rrand(-640, 640));
 			enemy->ty = (int)(enemy->y);
 			if ((enemy->flags & ENT_FLIES) || (enemy->flags & ENT_SWIMS))
 			{
@@ -1042,6 +1326,9 @@ void enemyBulletCollisions(Entity *bullet)
 						hitState.lostSight = 0;
 
 						alertNearbyEnemies(enemy);
+
+						if (hitState.rank == RANK_SERGEANT)
+							alertSquad(enemy);
 					}
 					enemy->face = 0;
 					
@@ -1266,7 +1553,7 @@ void doEnemies()
 				if (!enemy->referenced)
 				{
 					debug(("Removing unreferenced enemy '%s'\n", enemy->name));
-					aiState.erase(enemy);
+					forgetEnemy(enemy);
 					map.enemyList.remove(previous, enemy);
 					enemy = previous;
 				}
@@ -1337,7 +1624,8 @@ void doEnemies()
 					
 					drawAwareness(enemy, x, y);
 					drawHealthBar(enemy, x, y);
-					
+					drawRankBadge(enemy, x, y);
+
 					if ((enemy->dx != 0) || (enemy->flags & ENT_FLIES) || (enemy->flags & ENT_STATIC))
 					{
 						enemy->animate();
@@ -1459,7 +1747,7 @@ void doEnemies()
 							}
 							
 							debug(("Removing unreferenced enemy '%s'\n", enemy->name));
-							aiState.erase(enemy);
+							forgetEnemy(enemy);
 							map.enemyList.remove(previous, enemy);
 							enemy = previous;
 						}

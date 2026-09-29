@@ -132,7 +132,7 @@ void showScene(bool allowSkip)
 	
 	Cutscene *scene = (Cutscene*)sceneList.getHead();
 	
-	SDL_Surface *panel = graphics.quickSprite("panel", graphics.createSurface(640, 90));
+	SDL_Surface *panel = graphics.quickSprite("panel", graphics.createSurface(1280, 135));
 	SDL_Surface *image = NULL;
 	SDL_FillRect(panel, NULL, graphics.black);
 	

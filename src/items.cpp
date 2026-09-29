@@ -21,6 +21,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "items.h"
 
+extern void resetPlayerAmmo();
+
 void addItem(int itemType, const char *name, int x, int y, const char *spriteName, int health, int value, int flags, bool randomMovement)
 {
 	Entity *item = new Entity();
@@ -235,6 +237,7 @@ void pickUpItem(Entity *item)
 		case ITEM_SPREAD:
 			player.currentWeapon = &weapon[item->id];
 			game.currentWeapon = item->id;
+			resetPlayerAmmo();
 			audio.playSound(SND_GETWEAPON, CH_ITEM, item->x);
 			break;
 		case ITEM_POINTS:
@@ -339,7 +342,7 @@ void showCarriedItems()
 		itemCount++;
 	}
 
-	x = ((640 - x) / 2);
+	x = ((1280 - x) / 2);
 
 	item = (Entity*)map.itemList.getHead();
 

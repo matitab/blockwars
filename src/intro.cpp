@@ -60,9 +60,10 @@ void playIntro(int tx, int ty, int delay)
 		doSpawnPoints();
 		drawMapTopLayer();
 
+		// Text layout designed for 640x480: centre it on the real surface
 		for (int i = 0 ; i < 3 ; i++)
 			if (text[i] != NULL)
-				graphics.blit(text[i], 320, 150 + (i * 30), graphics.screen, true);
+				graphics.blit(text[i], graphics.screen->w / 2, 150 + ((graphics.screen->h - 480) / 2) + (i * 30), graphics.screen, true);
 
 		if (engine.userAccepts())
 			break;
@@ -99,11 +100,14 @@ void showIntroError()
 
 	graphics.setFontSize(1);
 
-	graphics.drawString("Couldn't play intro - Data file is missing.", 320, 150, true, graphics.screen);
-	graphics.drawString("This is not a fatal error, but could mean that the intro", 320, 180, true, graphics.screen);
-	graphics.drawString("file has not been found or was not in the expected format.", 320, 210, true, graphics.screen);
-	graphics.drawString("However it may also be a sign that the game may not work correctly.", 320, 240, true, graphics.screen);
-	graphics.drawString("Press Escape to Continue", 320, 350, true, graphics.screen);
+	const int cx = graphics.screen->w / 2;
+	const int dy = (graphics.screen->h - 480) / 2;
+
+	graphics.drawString("Couldn't play intro - Data file is missing.", cx, 150 + dy, true, graphics.screen);
+	graphics.drawString("This is not a fatal error, but could mean that the intro", cx, 180 + dy, true, graphics.screen);
+	graphics.drawString("file has not been found or was not in the expected format.", cx, 210 + dy, true, graphics.screen);
+	graphics.drawString("However it may also be a sign that the game may not work correctly.", cx, 240 + dy, true, graphics.screen);
+	graphics.drawString("Press Escape to Continue", cx, 350 + dy, true, graphics.screen);
 
 	while (true)
 	{
@@ -150,7 +154,7 @@ int doIntro()
 
 	for (int i = 0 ; i < 4 ; i++)
 	{
-		addItem(101, "CherryPlant", Math::prand() % 640, 9050, "CherryPlant", 100, 1, 0, false);
+		addItem(101, "CherryPlant", Math::prand() % 1280, 9050, "CherryPlant", 100, 1, 0, false);
 	}
 
 	if (!engine.loadData(_("data/introText")))

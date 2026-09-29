@@ -227,6 +227,10 @@ int title()
 
 	float offX = 0;
 
+	// Title layout was designed for 640x480: centre it on the real surface (1280x720)
+	const int dx = (graphics.screen->w - 640) / 2;
+	const int dy = (graphics.screen->h - 480) / 2;
+
 	engine.flushInput();
 	engine.clearInput();
 
@@ -244,9 +248,9 @@ int title()
 		engine.getInput();
 		config.populate();
 
-		for (int x = (int)offX ; x < 640 ; x += graphics.background->w)
+		for (int x = (int)offX ; x < 1280 ; x += graphics.background->w)
 		{
-			for (int y = 0 ; y < 480 ; y += graphics.background->h)
+			for (int y = 0 ; y < 720 ; y += graphics.background->h)
 			{
 				graphics.blit(graphics.background, x, y, graphics.screen, false);
 			}
@@ -256,15 +260,15 @@ int title()
 		{
 			if ((ticks >= now + 2000) && (ticks <= now + 10000))
 			{
-				graphics.blit(prlogo, 320, 240, graphics.screen, true);
+				graphics.blit(prlogo, 320 + dx, 240 + dy, graphics.screen, true);
 			}
 			else if ((ticks >= now + 13000) && (ticks <= now + 19000))
 			{
-				graphics.blit(presents, 320, 240, graphics.screen, true);
+				graphics.blit(presents, 320 + dx, 240 + dy, graphics.screen, true);
 			}
 			else if ((ticks >= now + 22000) && (ticks <= now + 27000))
 			{
-				graphics.blit(sdl, 320, 240, graphics.screen, true);
+				graphics.blit(sdl, 320 + dx, 240 + dy, graphics.screen, true);
 			}
 
 			if (engine.userAccepts())
@@ -297,10 +301,10 @@ int title()
 			}
 			else
 			{
-				graphics.blit(subTitle, 320, 180, graphics.screen, true);
+				graphics.blit(subTitle, 320 + dx, 180 + dy, graphics.screen, true);
 				for (int i = 0; copyright[i]; i++)
-					graphics.blit(copyright[i], 10, 460 - i * 18, graphics.screen, false);
-				graphics.blit(version, (630 - version->w), 460, graphics.screen, false);
+					graphics.blit(copyright[i], 10, graphics.screen->h - 20 - i * 18, graphics.screen, false);
+				graphics.blit(version, (graphics.screen->w - 10 - version->w), graphics.screen->h - 20, graphics.screen, false);
 				allFadedOn = true;
 			}
 
@@ -311,7 +315,7 @@ int title()
 
 		if (backAlpha > 0)
 		{
-			graphics.blit(title, 320, 100, graphics.screen, true);
+			graphics.blit(title, 320 + dx, 100 + dy, graphics.screen, true);
 		}
 
 		if (allFadedOn)
@@ -492,7 +496,7 @@ void doCredits()
 
 	line = strtok(NULL, "\n");
 
-	pos1 = 520;
+	pos1 = graphics.screen->h + 40;	// start just below the bottom edge of the view
 
 	graphics.setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
 
@@ -542,7 +546,7 @@ void doCredits()
 		engine.doTimeDifference();
 
 		SDL_FillRect(graphics.screen, NULL, graphics.black);
-		graphics.blit(backdrop, 0, 365, graphics.screen, false);
+		graphics.blit(backdrop, (graphics.screen->w - backdrop->w) / 2, graphics.screen->h - backdrop->h, graphics.screen, false);
 
 		float speed = 0.25;
 
@@ -553,22 +557,22 @@ void doCredits()
 		
 		deviceY -= (speed* engine.getTimeDifference());
 		
-		if ((deviceY > 10) && (deviceY < 470))
+		if ((deviceY > 10) && (deviceY < graphics.screen->h - 10))
 		{
-			graphics.blit(device, 320, (int)deviceY, graphics.screen, true);
+			graphics.blit(device, graphics.screen->w / 2, (int)deviceY, graphics.screen, true);
 		}
 
 		for (i = 0 ; i < numberOfCredits ; i++)
 		{
 			y[i] -= (speed * engine.getTimeDifference());
 			
-			if ((y[i] > 10) && (y[i] < 470))
+			if ((y[i] > 10) && (y[i] < graphics.screen->h - 10))
 			{
-				graphics.blit(credit[i], 320, (int)y[i], graphics.screen, true);
+				graphics.blit(credit[i], graphics.screen->w / 2, (int)y[i], graphics.screen, true);
 			}
 
-			graphics.drawRect(0, 450, 640, 30, graphics.black, graphics.screen);
-			graphics.drawRect(0, 0, 640, 30, graphics.black, graphics.screen);
+			graphics.drawRect(0, 675, 1280, 45, graphics.black, graphics.screen);
+			graphics.drawRect(0, 0, 1280, 45, graphics.black, graphics.screen);
 		}
 
 		doMusicInfo(SDL_GetTicks() - (now + 10000));
@@ -593,18 +597,22 @@ void doQuit()
 	SDL_Surface *sequel = graphics.loadImage("gfx/main/sequel.png");
 	SDL_Surface *book = graphics.loadImage("gfx/main/book.png");
 
+	// Layout designed for 640x480: centre it on the real surface
+	const int dx = (graphics.screen->w - 640) / 2;
+	const int dy = (graphics.screen->h - 480) / 2;
+
 	graphics.setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
 	graphics.setFontSize(1);
-	graphics.drawString(_("If you like Blob Wars: Metal Blob Solid, you might also like:"), 320, 20, true, graphics.screen);
-	graphics.blit(sequel, 160, 200, graphics.screen, true);
-	graphics.blit(book, 480, 200, graphics.screen, true);
+	graphics.drawString(_("If you like Blob Wars: Metal Blob Solid, you might also like:"), 320 + dx, 20 + dy, true, graphics.screen);
+	graphics.blit(sequel, 160 + dx, 200 + dy, graphics.screen, true);
+	graphics.blit(book, 480 + dx, 200 + dy, graphics.screen, true);
 	graphics.setFontSize(0);
-	graphics.drawString("http://blobandconquer.sf.net", 160, 380, true, graphics.screen);
-	graphics.drawString("http://www.battleforthesolarsystem.com", 480, 380, true, graphics.screen);
+	graphics.drawString("http://blobandconquer.sf.net", 160 + dx, 380 + dy, true, graphics.screen);
+	graphics.drawString("http://www.battleforthesolarsystem.com", 480 + dx, 380 + dy, true, graphics.screen);
 	graphics.setFontSize(3);
-	graphics.drawString(_("Thank you for playing Blob Wars!"), 320, 430, true, graphics.screen);
+	graphics.drawString(_("Thank you for playing Blob Wars!"), 320 + dx, 430 + dy, true, graphics.screen);
 	graphics.setFontSize(0);
-	graphics.drawString(_("Press Space to Exit."), 320, 460, true, graphics.screen);
+	graphics.drawString(_("Press Space to Exit."), 320 + dx, 460 + dy, true, graphics.screen);
 
 	graphics.updateScreen();
 

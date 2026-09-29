@@ -596,6 +596,13 @@ int doHub()
 	audio.playMusic();
 
 	int labelWidth = 0;
+
+	// The hub panels were laid out for 640x480. Keep them 640 wide but centred horizontally,
+	// the button bars anchored to the bottom and the info panel centred vertically.
+	const int dx = (graphics.screen->w - 640) / 2;
+	const int dyB = graphics.screen->h - 480;
+	const int dyC = (graphics.screen->h - 480) / 2;
+
 	Uint32 frameLimit = SDL_GetTicks() + 16;
 	Uint32 now = SDL_GetTicks();
 	
@@ -608,12 +615,12 @@ int doHub()
 		if (validStage)
 		{
 			static Graphics::SurfaceCache cache;
-			graphics.drawRect(10, 400, 620, 20, graphics.black, graphics.white, graphics.screen);
+			graphics.drawRect(10 + dx, 400 + dyB, 620, 20, graphics.black, graphics.white, graphics.screen);
 			snprintf(string, sizeof string, "%s : %s", _("Selected Destination"), _(game.stageName));
-			graphics.drawString(string, 320, 409, true, graphics.screen, cache);
+			graphics.drawString(string, 320 + dx, 409 + dyB, true, graphics.screen, cache);
 		}
 		
-		graphics.drawRect(10, 430, 620, 40, graphics.black, graphics.white, graphics.screen);
+		graphics.drawRect(10 + dx, 430 + dyB, 620, 40, graphics.black, graphics.white, graphics.screen);
 
 		#if DEBUG
 		static Graphics::SurfaceCache posCache;
@@ -668,7 +675,7 @@ int doHub()
 
 				labelWidth = hubPoint->levelNameImage->w / 2;
 
-				Math::limitInt(&labelX, 10 + labelWidth, 630 - labelWidth);
+				Math::limitInt(&labelX, 10 + labelWidth, graphics.screen->w - 10 - labelWidth);
 
 				graphics.blit(hubPoint->levelNameImage, labelX, labelY, graphics.screen, true);
 
@@ -697,8 +704,8 @@ int doHub()
 		// Collisions for Panel
 		for (int i = ((1 - validStage) * 2) ; i < 6 ; i++)
 		{
-			graphics.blit(hubIcons->image[i], 50 + (i * 100), 440, graphics.screen, false);
-			if (Collision::collision(engine.getMouseX(), engine.getMouseY(), 1, 1, 50 + (i * 100), 440, hubIcons->image[i]->w, hubIcons->image[i]->h))
+			graphics.blit(hubIcons->image[i], 50 + dx + (i * 100), 440 + dyB, graphics.screen, false);
+			if (Collision::collision(engine.getMouseX(), engine.getMouseY(), 1, 1, 50 + dx + (i * 100), 440 + dyB, hubIcons->image[i]->w, hubIcons->image[i]->h))
 			{
 				if (engine.mouseLeft || config.isControl(CONTROL::FIRE))
 				{
@@ -744,7 +751,7 @@ int doHub()
 		    // SDL_SCANCODE_LCTRL is the "fire" button.
 			if (engine.mouseLeft || config.isControl(CONTROL::FIRE))
 			{
-				if (Collision::collision(engine.getMouseX(), engine.getMouseY(), 1, 1, 270, 310, 32, 32))
+				if (Collision::collision(engine.getMouseX(), engine.getMouseY(), 1, 1, 270 + dx, 310 + dyC, 32, 32))
 				{
 					if (showMIAs)
 					{
@@ -766,7 +773,7 @@ int doHub()
 				}
 
 
-				if (Collision::collision(engine.getMouseX(), engine.getMouseY(), 1, 1, 320, 310, 32, 32))
+				if (Collision::collision(engine.getMouseX(), engine.getMouseY(), 1, 1, 320 + dx, 310 + dyC, 32, 32))
 				{
 					if (showMIAs)
 					{
@@ -791,7 +798,7 @@ int doHub()
 
 		if ((showData) || (showStats) || (showMIAs))
 		{
-			graphics.blit(infoPanel, 320, 200, graphics.screen, true);
+			graphics.blit(infoPanel, 320 + dx, 200 + dyC, graphics.screen, true);
 			if (engine.mouseLeft || config.isControl(CONTROL::FIRE))
 			{
 				showData = showStats = showMIAs = false;

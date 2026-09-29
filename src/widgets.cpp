@@ -231,7 +231,7 @@ void drawWidgets()
 
 		if (widget->x == -1)
 		{
-			widget->x = (640 - widget->image->w) / 2;
+			widget->x = (1280 - widget->image->w) / 2;
 		}
 
 		if (widget == engine.highlightedWidget)
