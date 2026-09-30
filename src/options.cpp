@@ -277,6 +277,80 @@ void showJoystickConfig()
 	engine.highlightWidget("joysticks");
 }
 
+void showGameplayConfig()
+{
+	SDL_FillRect(graphics.screen, NULL, graphics.black);
+	graphics.delay(500);
+
+	if (!engine.loadWidgets(_("data/gameplayWidgets")))
+	{
+		graphics.showErrorAndExit(ERR_FILE, _("data/gameplayWidgets"));
+	}
+
+	SDL_Surface *header = graphics.getSprite("optionsHeader", true)->image[0];
+	SDL_Surface *optionsBackground = graphics.getSprite("optionsBackground", true)->image[0];
+	SDL_SetColorKey(optionsBackground, 0, SDL_MapRGB(optionsBackground->format, 0, 0, 0));
+
+	int done = 0;
+
+	engine.setWidgetVariable("mouseaim", &game.mouseAim);
+	engine.setWidgetVariable("trail", &game.bulletTrail);
+	engine.setWidgetVariable("preview", &game.grenadePreview);
+	engine.setWidgetVariable("camlead", &game.cameraLead);
+	engine.setWidgetVariable("shake", &game.screenShake);
+	engine.setWidgetVariable("confirm", &done);
+
+	graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
+	graphics.blit(header, 320, 25, graphics.screen, true);
+	drawWidgets();
+
+	engine.flushInput();
+	engine.clearInput();
+
+	int menuSound = -1;
+
+	while (!done)
+	{
+		graphics.updateScreen();
+
+		if (menuSound)
+			audio.playMenuSound(menuSound);
+
+		engine.getInput();
+		config.populate();
+
+		menuSound = engine.processWidgets();
+
+		if (menuSound)
+		{
+			graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
+			graphics.blit(header, 320, 25, graphics.screen, true);
+			drawWidgets();
+		}
+
+		if (engine.keyState[SDL_SCANCODE_ESCAPE])
+		{
+			engine.clearInput();
+			engine.flushInput();
+			done = 1;
+		}
+
+		SDL_Delay(16);
+	}
+
+	audio.playMenuSound(2);
+
+	SDL_FillRect(graphics.screen, NULL, graphics.black);
+	graphics.delay(500);
+
+	if (!engine.loadWidgets(_("data/optionWidgets")))
+	{
+		graphics.showErrorAndExit(ERR_FILE, _("data/optionWidgets"));
+	}
+
+	engine.highlightWidget("gameplay");
+}
+
 void showOptions()
 {
 	float brightness;
@@ -297,6 +371,7 @@ void showOptions()
 	int joysticks = 0;
 	int cheats = 0;
 	int keys = 0;
+	int gameplay = 0;
 
 	engine.setWidgetVariable("fullscreen", &engine.fullScreen);
 	engine.setWidgetVariable("soundvol", &game.soundVol);
@@ -308,6 +383,7 @@ void showOptions()
 	engine.setWidgetVariable("keys", &keys);
 	engine.setWidgetVariable("joysticks", &joysticks);
 	engine.setWidgetVariable("cheats", &cheats);
+	engine.setWidgetVariable("gameplay", &gameplay);
 	engine.setWidgetVariable("confirm", &done);
 
 	if (!engine.useAudio)
@@ -379,7 +455,7 @@ void showOptions()
 				}
 			}
 			
-			if ((joysticks) || (cheats) || (keys))
+			if ((joysticks) || (cheats) || (keys) || (gameplay))
 			{
 				audio.playMenuSound(2);
 				menuSound = 0;
@@ -396,8 +472,12 @@ void showOptions()
 				{
 					showKeyConfig();
 				}
+				else if (gameplay)
+				{
+					showGameplayConfig();
+				}
 				
-				joysticks = keys = cheats = 0;
+				joysticks = keys = cheats = gameplay = 0;
 
 				engine.setWidgetVariable("fullscreen", &engine.fullScreen);
 				engine.setWidgetVariable("soundvol", &game.soundVol);
@@ -409,6 +489,7 @@ void showOptions()
 				engine.setWidgetVariable("keys", &keys);
 				engine.setWidgetVariable("joysticks", &joysticks);
 				engine.setWidgetVariable("cheats", &cheats);
+				engine.setWidgetVariable("gameplay", &gameplay);
 				engine.setWidgetVariable("confirm", &done);
 
 				if (!engine.useAudio)

@@ -104,6 +104,8 @@ MachineIcon 		0 0 0 gfx/sprites/machineGunIcon.png 60 @none@ 0
 GrenadeIcon 		0 0 0 gfx/sprites/grenadeIcon.png 60 @none@ 0
 LaserIcon 			0 0 0 gfx/sprites/laserIcon.png 60 @none@ 0
 SpreadIcon 			0 0 0 gfx/sprites/spreadIcon.png 60 @none@ 0
+RocketIcon 			0 0 0 gfx/sprites/rocketIcon.png 60 @none@ 0
+PlasmaIcon 			0 0 0 gfx/sprites/plasmaIcon.png 60 @none@ 0
 
 PistolDroidLeft 	0 0 0 gfx/sprites/eyeDroidLeft1.png 7 gfx/sprites/eyeDroidLeft2.png 7 gfx/sprites/eyeDroidLeft3.png 7 gfx/sprites/eyeDroidLeft4.png 7 @none@ 0
 PistolDroidRight 	0 0 0 gfx/sprites/eyeDroidRight1.png 7 gfx/sprites/eyeDroidRight2.png 7 gfx/sprites/eyeDroidRight3.png 7 gfx/sprites/eyeDroidRight4.png 7 @none@ 0

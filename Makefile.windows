@@ -22,6 +22,7 @@ CXX = g++
 
 CXXFLAGS += -Dmain=SDL_main
 CXXFLAGS += -g -O0
+CXXFLAGS += -MMD -MP
 CXXFLAGS += -DVERSION=$(VERSION) -DRELEASE=$(RELEASE) -DUSEPAK=$(USEPAK)
 CXXFLAGS += -DPAKNAME=\"$(PAKNAME)\" -DPAKLOCATION=\".\\\\\" -DGAMEPLAYMANUAL=\"doc/index.html\" -Wall
 CXXFLAGS += -DLOCALEDIR=\"\" $(CFLAGS)  -DMEDAL_SERVER_HOST=\"$(MEDAL_SERVER_HOST)\" -DMEDAL_SERVER_PORT=$(MEDAL_SERVER_PORT)
@@ -99,9 +100,13 @@ mapeditor.exe: $(MAPOBJS)
 
 # cleaning everything that can be automatically recreated with "make".
 clean:
-	$(RM) $(GAMEOBJS) mapEditor.o pak.o $(PROG) $(PAKNAME) pak.exe mapeditor.exe $(LOCALE_MO)
+	$(RM) $(GAMEOBJS) mapEditor.o pak.o $(PROG) $(PAKNAME) pak.exe mapeditor.exe $(LOCALE_MO) *.d
 
 $(PAKNAME): pak.exe
 	./pak $(DATA) $(PAKNAME)
 
 buildpak: $(PAKNAME)
+
+# dependencias de cabeceras generadas por el compilador (-MMD)
+# va al final para no cambiar la regla por defecto (all)
+-include $(GAMEOBJS:.o=.d)

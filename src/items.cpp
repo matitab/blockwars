@@ -23,6 +23,27 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 extern void resetPlayerAmmo();
 
+/*
+Items 15 and 16 (data/defItems) give the player's own rocket launcher and
+plasma rifle (weapons 21 and 22 in data/weapons). Every other weapon item
+still uses its id as the weapon index.
+*/
+const int ITEM_ROCKET_LAUNCHER = 15;
+const int ITEM_PLASMA_GUN = 16;
+
+static int getWeaponIdFromItem(int itemId)
+{
+	switch (itemId)
+	{
+		case ITEM_ROCKET_LAUNCHER:
+			return 21;
+		case ITEM_PLASMA_GUN:
+			return 22;
+	}
+
+	return itemId;
+}
+
 void addItem(int itemType, const char *name, int x, int y, const char *spriteName, int health, int value, int flags, bool randomMovement)
 {
 	Entity *item = new Entity();
@@ -235,11 +256,16 @@ void pickUpItem(Entity *item)
 		case ITEM_LASER:
 		case ITEM_GRENADES:
 		case ITEM_SPREAD:
-			player.currentWeapon = &weapon[item->id];
-			game.currentWeapon = item->id;
+		case ITEM_ROCKET_LAUNCHER:
+		case ITEM_PLASMA_GUN:
+		{
+			int weaponId = getWeaponIdFromItem(item->id);
+			player.currentWeapon = &weapon[weaponId];
+			game.currentWeapon = weaponId;
 			resetPlayerAmmo();
 			audio.playSound(SND_GETWEAPON, CH_ITEM, item->x);
 			break;
+		}
 		case ITEM_POINTS:
 		case ITEM_POINTS2:
 		case ITEM_POINTS3:

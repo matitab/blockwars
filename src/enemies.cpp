@@ -23,6 +23,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <algorithm>
 #include "enemies.h"
 
+// Enemy grenade throws (bullets.cpp): plan says how much charge a throw needs, add makes the throw
+extern bool planEnemyGrenade(Entity *owner, float *power);
+extern void addEnemyGrenade(Entity *owner, float power);
+
 // Extra per-enemy AI state (kept here so no other header has to change)
 struct EnemyAIState
 {
@@ -44,8 +48,12 @@ struct EnemyAIState
 	Entity *squadLeader; // the sergeant this soldier follows (NULL = none)
 	int confused;    // frames left of disorientation after the sergeant died
 	int panicDir;    // direction (-1 / 1) it stumbles in while confused
+	int grenadeX, grenadeY; // position of last grenade thrown (for avoidance)
+	int grenadeTimer; // frames since grenade was thrown (to know when it's safe)
+	int telegraphTotal; // length of the current warning (for the grenade charge bar)
+	bool charging;   // the current warning is a grenade being held
 
-	EnemyAIState() : telegraph(0), fireNow(false), fireTimeout(0), awareness(0), lostSight(0), alerted(false), canSee(false), lastX(0), lastY(0), prevX(0), stuck(0), maxHealth(0), burstLeft(0), burstTimeout(0), attackStamp(0), rank(0), squadLeader(NULL), confused(0), panicDir(1) {}
+	EnemyAIState() : telegraph(0), fireNow(false), fireTimeout(0), awareness(0), lostSight(0), alerted(false), canSee(false), lastX(0), lastY(0), prevX(0), stuck(0), maxHealth(0), burstLeft(0), burstTimeout(0), attackStamp(0), rank(0), squadLeader(NULL), confused(0), panicDir(1), grenadeX(0), grenadeY(0), grenadeTimer(0), telegraphTotal(0), charging(false) {}
 };
 
 static std::map<Entity*, EnemyAIState> aiState;
@@ -69,6 +77,19 @@ static const int HEAR_RANGE_X = 420;    // how far a gunshot is heard
 static const int HEAR_RANGE_Y = 220;
 static const int BURST_PAUSE = 50;      // extra wait after a burst
 
+// Preferred distance from player, by weapon type (pixels)
+static const int DIST_CLOSE = 150;      // pistol, machine gun
+static const int DIST_MEDIUM = 300;     // laser, spread
+static const int DIST_FAR = 450;        // grenades, rockets
+
+// Separation between enemies (pixels) to avoid stacking
+static const int ENEMY_SEPARATION = 64;
+
+// Grenade safety: frames to wait after throwing before throwing another
+static const int GRENADE_COOLDOWN = 120; // about 2 seconds
+static const int GRENADE_SAFE_DISTANCE = 150; // stay this far from own grenade
+static const int GRENADE_CHARGE_FRAMES = 45;  // extra hold time of a full-power throw (about 0.75 s)
+
 static unsigned int aiFrame = 0;        // frame counter, used for the attack turns
 static int attackCooldown = 0;          // frames until another enemy may start attacking
 static int lastPlayerReload = 0;        // used to notice when the player fires
@@ -78,19 +99,142 @@ static EnemyAIState &getAIState(Entity *enemy)
 	return aiState[enemy];
 }
 
+// Get preferred distance from player based on weapon type
+static int getPreferredDistance(Entity *enemy)
+{
+	Weapon *w = enemy->currentWeapon;
+
+	// Grenades and rockets: stay far
+	if ((w == &weapon[WP_GRENADES]) || (w == &weapon[WP_ROCKETS]) ||
+	    (w == &weapon[WP_ALIENGRENADE]))
+		return DIST_FAR;
+
+	// Laser and spread: medium distance
+	if ((w == &weapon[WP_LASER]) || (w == &weapon[WP_SPREAD]) ||
+	    (w == &weapon[WP_ALIENSPREAD]) || (w == &weapon[WP_ALIENLASER]))
+		return DIST_MEDIUM;
+
+	// Pistol and machine gun: close
+	return DIST_CLOSE;
+}
+
+// Check if another enemy is too close (for separation)
+static bool isEnemyTooClose(Entity *enemy, Entity *other)
+{
+	if (other == enemy)
+		return false;
+
+	if (other->health <= 0)
+		return false;
+
+	float dx = fabs(enemy->x - other->x);
+	float dy = fabs(enemy->y - other->y);
+
+	return ((dx < ENEMY_SEPARATION) && (dy < ENEMY_SEPARATION));
+}
+
+static bool isGrenadeWeapon(Entity *enemy)
+{
+	Weapon *w = enemy->currentWeapon;
+
+	return ((w == &weapon[WP_GRENADES]) || (w == &weapon[WP_ALIENGRENADE]));
+}
+
+// Check if it's safe to throw a grenade (won't hurt self or nearby allies)
+static bool isGrenadeSafe(Entity *enemy)
+{
+	EnemyAIState &st = getAIState(enemy);
+	Weapon *w = enemy->currentWeapon;
+	int grenadeRadius = 50; // standard grenade explosion radius
+
+	// Check if cooldown hasn't expired (strategic: wait for previous grenade to explode)
+	if (st.grenadeTimer > 0)
+		return false;
+
+	// Check if enemy is too close to player (would hurt self)
+	float distToPlayer = fabs(enemy->x - player.x);
+	if (distToPlayer < grenadeRadius)
+		return false;
+
+	// Check if enemy would be hurt by its own grenade
+	// Grenades land near the player, so if enemy is too close to player, it's unsafe
+	if (distToPlayer < (grenadeRadius + 100))
+		return false;
+
+	// Check if any nearby ally would be hurt
+	Entity *other = (Entity*)map.enemyList.getHead();
+	while (other->next != NULL)
+	{
+		other = (Entity*)other->next;
+
+		if (other == enemy)
+			continue;
+
+		if (other->health <= 0)
+			continue;
+
+		// Don't care about enemies that are already far away
+		float dx = fabs(enemy->x - other->x);
+		float dy = fabs(enemy->y - other->y);
+
+		if ((dx < grenadeRadius) && (dy < grenadeRadius))
+			return false; // ally would be hurt
+	}
+
+	return true;
+}
+
+// Check if there's a player grenade nearby and move away from it
+static bool avoidPlayerGrenade(Entity *enemy)
+{
+	Entity *bullet = (Entity*)map.bulletList.getHead();
+	int grenadeRadius = 50;
+	int safeDistance = 150;
+
+	while (bullet->next != NULL)
+	{
+		bullet = (Entity*)bullet->next;
+
+		// Only care about player's grenades
+		if (bullet->owner != &player)
+			continue;
+
+		if (!(bullet->flags & ENT_EXPLODES))
+			continue;
+
+		// Check distance to this grenade
+		float dx = fabs(enemy->x - bullet->x);
+		float dy = fabs(enemy->y - bullet->y);
+
+		if ((dx < safeDistance) && (dy < safeDistance))
+		{
+			// Move away from the grenade
+			if (bullet->x < enemy->x)
+				enemy->tx = (int)(enemy->x + 100);
+			else
+				enemy->tx = (int)(enemy->x - 100);
+
+			return true; // avoiding a grenade
+		}
+	}
+
+	return false; // no grenades nearby
+}
+
 // ---------------------------------------------------------------------------
-// Ranks & squads. Only one-hit blobs on the ground can be promoted.
-//   Soldier : 1 hp, as before
-//   Veteran : 3 hp, longer bursts, shorter warning, always shows a health bar
-//   Sergeant: 5 hp, leads a squad. When it spots you (or is shot) the whole squad
+// Ranks & squads. Only ground blobs with a low base health can be promoted.
+//   Soldier : base hp (from defEnemies)
+//   Veteran : base + 2 hp, longer bursts, shorter warning, always shows a health bar
+//   Sergeant: base + 4 hp, leads a squad. When it spots you (or is shot) the whole squad
 //             goes to full alert. Kill it and the squad panics for a few seconds.
 // ---------------------------------------------------------------------------
 static const int RANK_SOLDIER = 0;
 static const int RANK_VETERAN = 1;
 static const int RANK_SERGEANT = 2;
 
-static const int VETERAN_HEALTH = 3;
-static const int SERGEANT_HEALTH = 5;
+static const int VETERAN_BONUS_HEALTH = 2;   // extra hp on top of the base health
+static const int SERGEANT_BONUS_HEALTH = 4;
+static const int RANK_MAX_BASE_HEALTH = 3;   // tougher enemies (spiders...) are never promoted
 static const int MAX_SERGEANTS = 5;        // alive at the same time on a map
 static const int SQUAD_PANIC_FRAMES = 150; // how long the squad is lost without its leader
 
@@ -185,6 +329,20 @@ static void drawAwareness(Entity *enemy, int x, int y)
 
 		drawGlyph(GLYPH_ALERT, 3, cx - 3 + 1, top + 1, graphics.black);
 		drawGlyph(GLYPH_ALERT, 3, cx - 3, top, color);
+
+		// holding a grenade: bar that fills up until the throw
+		if ((st.charging) && (st.telegraph > 0) && (st.telegraphTotal > 0))
+		{
+			int cw = 16;
+			int cfill = (cw * (st.telegraphTotal - st.telegraph)) / st.telegraphTotal;
+
+			if (cfill < 1)
+				cfill = 1;
+
+			graphics.drawRect(cx - (cw / 2) - 1, y - 12, cw + 2, 4, graphics.black, graphics.screen);
+			graphics.drawRect(cx - (cw / 2), y - 11, cfill, 2, SDL_MapRGB(graphics.screen->format, 255, 140, 0), graphics.screen);
+		}
+
 		return;
 	}
 
@@ -207,7 +365,7 @@ static void drawAwareness(Entity *enemy, int x, int y)
 }
 
 // Small health bar over enemies that can take several hits. Only shown once
-// the enemy has been damaged, so one-hit enemies never get one.
+// the enemy has been damaged (ranked enemies always show it).
 static void drawHealthBar(Entity *enemy, int x, int y)
 {
 	if (enemy->health <= 0)
@@ -445,13 +603,72 @@ static void spawnEscorts(Entity *leader)
 	}
 }
 
+// Higher ranks may carry a different weapon than their base type. The weapon is always
+// taken from the same aiming style (ENT_AIMS blobs keep aimed weapons, the others keep
+// straight ones), so the AI, aim and burst code keep working as before.
+static const int VETERAN_WEAPON_CHANCE = 30;  // % of veterans that change weapon
+static const int SERGEANT_WEAPON_CHANCE = 60; // % of sergeants that change weapon
+static const int SERGEANT_ROCKET_CHANCE = 25; // % of the sergeants' aimed pools that also include rockets
+
+static void giveRankWeapon(Entity *enemy, int rank)
+{
+	int chance = (rank == RANK_SERGEANT) ? SERGEANT_WEAPON_CHANCE : VETERAN_WEAPON_CHANCE;
+
+	if ((int)(Math::prand() % 100) >= chance)
+		return;
+
+	Weapon *pool[6];
+	int count = 0;
+
+	if (enemy->flags & ENT_AIMS)
+	{
+		pool[count++] = &weapon[WP_AIMEDPISTOL];
+		pool[count++] = &weapon[WP_AIMEDMACHINE];
+		pool[count++] = &weapon[WP_ALIENSPREAD];
+		pool[count++] = &weapon[WP_ALIENGRENADE];
+
+		if ((rank == RANK_SERGEANT) && ((int)(Math::prand() % 100) < SERGEANT_ROCKET_CHANCE))
+			pool[count++] = &weapon[WP_ROCKETS];
+	}
+	else
+	{
+		pool[count++] = &weapon[WP_MACHINEGUN];
+		pool[count++] = &weapon[WP_ALIENLASER];
+	}
+
+	// never pick the weapon the enemy already has
+	Weapon *candidates[6];
+	int total = 0;
+
+	for (int i = 0 ; i < count ; i++)
+	{
+		if (pool[i] != enemy->currentWeapon)
+			candidates[total++] = pool[i];
+	}
+
+	if (total == 0)
+		return;
+
+	Weapon *chosen = candidates[Math::prand() % total];
+	enemy->currentWeapon = chosen;
+
+	// ENT_RAPIDFIRE belongs to the machine gun: a laser must not inherit it (or the reverse)
+	if (!(enemy->flags & ENT_AIMS))
+	{
+		if (chosen == &weapon[WP_MACHINEGUN])
+			Math::addBit(&enemy->flags, ENT_RAPIDFIRE);
+		else
+			Math::removeBit(&enemy->flags, ENT_RAPIDFIRE);
+	}
+}
+
 // Decide the rank of a newly placed enemy (the name never changes, so objectives still count it)
 static void assignRank(Entity *enemy, int flags)
 {
 	if (map.isBossMission)
 		return;
 
-	if (enemy->health > 1)
+	if (enemy->health > RANK_MAX_BASE_HEALTH)
 		return;
 
 	if (enemy->flags & (ENT_FLIES|ENT_SWIMS|ENT_STATIC|ENT_NOMOVE|ENT_BOSS|ENT_GALDOV|ENT_INANIMATE|ENT_IMMUNE))
@@ -469,9 +686,10 @@ static void assignRank(Entity *enemy, int flags)
 		if (countLiveRank(RANK_SERGEANT) < MAX_SERGEANTS)
 		{
 			st.rank = RANK_SERGEANT;
-			enemy->health = SERGEANT_HEALTH;
+			enemy->health += SERGEANT_BONUS_HEALTH;
 			enemy->value *= 4;
 			st.maxHealth = enemy->health;
+			giveRankWeapon(enemy, RANK_SERGEANT);
 			spawnEscorts(enemy);
 			return;
 		}
@@ -482,9 +700,10 @@ static void assignRank(Entity *enemy, int flags)
 	if (roll < (sergeantChance + getVeteranChance()))
 	{
 		st.rank = RANK_VETERAN;
-		enemy->health = VETERAN_HEALTH;
+		enemy->health += VETERAN_BONUS_HEALTH;
 		enemy->value *= 2;
 		st.maxHealth = enemy->health;
+		giveRankWeapon(enemy, RANK_VETERAN);
 	}
 }
 
@@ -501,11 +720,11 @@ void addEnemy(const char *name, int x, int y, int flags)
 bool hasClearShot(Entity *enemy)
 {
 	int mx, my;
-	float x = enemy->x;
-	float y = enemy->y;
+	float x = enemy->x + (enemy->width / 2);
+	float y = enemy->y + (enemy->height / 2);
 	float dx, dy;
 
-	Math::calculateSlope(player.x, player.y, enemy->x, enemy->y, &dx, &dy);
+	Math::calculateSlope(player.x + (player.width / 2), player.y + (player.height / 2), x, y, &dx, &dy);
 
 	if ((dx == 0) && (dy == 0))
 		return true;
@@ -532,7 +751,7 @@ bool hasClearShot(Entity *enemy)
 		if (map.isSolid(mx, my))
 			return false;
 
-		if (Collision::collision(x, y, 3, 3, (int)player.x, (int)player.y, player.height, player.width))
+		if (Collision::collision(x, y, 3, 3, (int)player.x, (int)player.y, player.width, player.height))
 			break;
 	}
 
@@ -936,16 +1155,38 @@ void lookForPlayer(Entity *enemy)
 				// wait for our turn to attack
 				if (canStartAttack())
 				{
-					beginAttack(st);
+					float power = 0;
+					bool grenade = isGrenadeWeapon(enemy);
 
-					if (isLeader)
+					// a grenade thrower only starts when it can hit the player and its own blast is safe
+					if ((!grenade) || (isGrenadeSafe(enemy) && planEnemyGrenade(enemy, &power)))
 					{
-						// warn the player before shooting
-						st.telegraph = getWindupFrames(st.rank);
-					}
-					else
-					{
-						shoot = true;
+						beginAttack(st);
+
+						if (isLeader)
+						{
+							// warn the player before shooting
+							st.telegraph = getWindupFrames(st.rank);
+							st.charging = false;
+
+							// a grenade is held for as long as the throw needs (far or high targets)
+							if (grenade)
+							{
+								int hold = (int)(power * GRENADE_CHARGE_FRAMES);
+
+								if (hold > 0)
+								{
+									st.telegraph += hold;
+									st.charging = true;
+								}
+							}
+
+							st.telegraphTotal = st.telegraph;
+						}
+						else
+						{
+							shoot = true;
+						}
 					}
 				}
 			}
@@ -954,11 +1195,55 @@ void lookForPlayer(Entity *enemy)
 			{
 				st.fireNow = false;
 
-				addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), aimDY);
-				if (enemy->currentWeapon == &weapon[WP_ALIENSPREAD])
+				// Don't fire grenades if it would hurt self or allies
+				bool grenadeThrown = false;
+				if (isGrenadeWeapon(enemy))
 				{
-					addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), aimDY + 2);
-					addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), aimDY - 2);
+					if (!isGrenadeSafe(enemy))
+					{
+						// Skip this shot, but keep the burst timing
+						if (fromWindup || continuing)
+						{
+							if (fromWindup)
+							{
+								st.burstLeft = getBurstSize(enemy) - 1;
+								st.burstTimeout = 120;
+							}
+							else
+							{
+								st.burstLeft--;
+							}
+						}
+						return;
+					}
+
+					// The player may have moved out of reach while the grenade was being held
+					float power = 0;
+					if (!planEnemyGrenade(enemy, &power))
+					{
+						st.burstLeft = 0;
+						enemy->reload = 30;
+						return;
+					}
+
+					// Record grenade position and start cooldown
+					st.grenadeX = (int)player.x;
+					st.grenadeY = (int)player.y;
+					st.grenadeTimer = GRENADE_COOLDOWN;
+
+					// Throw it with the speed and angle that land on the player
+					addEnemyGrenade(enemy, power);
+					grenadeThrown = true;
+				}
+
+				if (!grenadeThrown)
+				{
+					addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), aimDY);
+					if (enemy->currentWeapon == &weapon[WP_ALIENSPREAD])
+					{
+						addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), aimDY + 2);
+						addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), aimDY - 2);
+					}
 				}
 
 				if (enemy->flags & ENT_ALWAYSFIRES)
@@ -1063,6 +1348,7 @@ void doAI(Entity *enemy)
 		{
 			ai.fireNow = true;
 			ai.fireTimeout = 45;
+			ai.charging = false;
 		}
 	}
 	else if (ai.fireNow)
@@ -1077,6 +1363,10 @@ void doAI(Entity *enemy)
 		if (--ai.burstTimeout <= 0)
 			ai.burstLeft = 0;
 	}
+
+	// Update grenade timer
+	if (ai.grenadeTimer > 0)
+		ai.grenadeTimer--;
 
 	// tell the attack turns system this enemy is busy
 	if ((ai.telegraph > 0) || (ai.burstLeft > 0))
@@ -1153,6 +1443,106 @@ void doAI(Entity *enemy)
 	// keep it: otherwise a standing enemy could never start chasing.
 	if ((enemy->dx == 0) && (!aware))
 		enemy->tx = (int)enemy->x;
+
+	// AVOID PLAYER'S GRENADES (highest priority - survival)
+	if (avoidPlayerGrenade(enemy))
+	{
+		// Grenade detected and moved away, skip distance preference
+		// Continue to ally grenade avoidance and separation
+	}
+	else
+	{
+		// Distance preference: aware enemies stop at their preferred distance
+		if (aware && (ai.canSee))
+		{
+			int prefDist = getPreferredDistance(enemy);
+			float currentDist = fabs(enemy->x - player.x);
+
+			// If too close, back away. If too far, approach.
+			if (currentDist < (prefDist - 50))
+			{
+				// Too close: move away from player
+				if (player.x < enemy->x)
+					enemy->tx = (int)(enemy->x + 100);
+				else
+					enemy->tx = (int)(enemy->x - 100);
+			}
+			else if (currentDist > (prefDist + 50))
+			{
+				// Too far: move toward player (already handled by ai.lastX/lastY)
+				enemy->tx = ai.lastX;
+			}
+			else
+			{
+				// At preferred distance: hold position
+				enemy->tx = (int)enemy->x;
+			}
+		}
+	}
+
+	// Grenade avoidance: if enemy threw a grenade recently, stay away from it
+	if (ai.grenadeTimer > 0)
+	{
+		float distToGrenade = fabs(enemy->x - ai.grenadeX);
+
+		// If too close to grenade position, move away
+		if (distToGrenade < GRENADE_SAFE_DISTANCE)
+		{
+			// Move away from grenade position
+			if (ai.grenadeX < enemy->x)
+				enemy->tx = (int)(enemy->x + 100);
+			else
+				enemy->tx = (int)(enemy->x - 100);
+		}
+	}
+
+	// Also avoid grenades thrown by nearby allies
+	Entity *other = (Entity*)map.enemyList.getHead();
+	while (other->next != NULL)
+	{
+		other = (Entity*)other->next;
+
+		if (other == enemy)
+			continue;
+
+		if (other->health <= 0)
+			continue;
+
+		EnemyAIState &otherSt = getAIState(other);
+
+		// If this ally has an active grenade, check if we're too close
+		if (otherSt.grenadeTimer > 0)
+		{
+			float distToAllyGrenade = fabs(enemy->x - otherSt.grenadeX);
+
+			if (distToAllyGrenade < GRENADE_SAFE_DISTANCE)
+			{
+				// Move away from ally's grenade position
+				if (otherSt.grenadeX < enemy->x)
+					enemy->tx = (int)(enemy->x + 100);
+				else
+					enemy->tx = (int)(enemy->x - 100);
+			}
+		}
+	}
+
+	// Separation: avoid stacking with other enemies
+	if (aware)
+	{
+		Entity *other = (Entity*)map.enemyList.getHead();
+		while (other->next != NULL)
+		{
+			other = (Entity*)other->next;
+			if (isEnemyTooClose(enemy, other))
+			{
+				// Move away from the other enemy
+				if (other->x < enemy->x)
+					enemy->tx = (int)(enemy->x + 50);
+				else
+					enemy->tx = (int)(enemy->x - 50);
+			}
+		}
+	}
 
 	// Don't enter areas you're not supposed to
 	if (enemy->tx != (int)enemy->x)

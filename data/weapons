@@ -9,7 +9,7 @@
 7 "Flame Thrower"			7 3 35 0 0 0 Explosion Explosion -1 ENT_WEIGHTLESS
 9 "Lava Ball"				9 50 240 0 0 20 LavaRock LavaRock 12 ENT_ONFIRE+ENT_EXPLODES
 10 "Lava Ball"				10 50 240 0 0 20 LavaRock LavaRock 12 ENT_ONFIRE+ENT_EXPLODES
-11 "Aimed Pistol" 			11 1 240 4 4 5 AimedShot AimedShot 3 ENT_WEIGHTLESS
+11 "Aimed Pistol" 			11 1 240 5 5 5 AimedShot AimedShot 3 ENT_WEIGHTLESS
 12 "Aimed Spread Gun"		4 1 240 4 4 15 PlasmaBolt PlasmaBolt 34 ENT_WEIGHTLESS+ENT_PARTICLETRAIL
 13 "Shells"					13 75 240 15 0 1 PlasmaBolt PlasmaBolt 11 ENT_WEIGHTLESS+ENT_EXPLODES
 14 "Rock"					14 25 240 0 0 20 LavaRock LavaRock 12 ENT_EXPLODES
@@ -20,5 +20,8 @@
 19 "Aimed Machine Gun" 		19 1 240 8 8 2 FlameBulletRight FlameBulletLeft 6 ENT_WEIGHTLESS
 
 20 "Mortor Shells"			20 50 240 4 -4 20 AlienGrenade AlienGrenade 31 ENT_ONFIRE+ENT_EXPLODES
+
+21 "Player Rocket Launcher"	5 100 240 8 0 45 FlameBulletRight FlameBulletLeft 11 ENT_WEIGHTLESS+ENT_FIRETRAIL+ENT_EXPLODES
+22 "Player Plasma Rifle"		6 12 60 8 0 14 PlasmaBolt PlasmaBolt 34 ENT_WEIGHTLESS+ENT_EXPLODES
 
 @EOF@

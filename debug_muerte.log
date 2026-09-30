@@ -1,0 +1,62 @@
+doGame: health=2 immune=179 missionOver=0 reason=0 paused=0 env=0
+doGame: health=2 immune=149 missionOver=0 reason=0 paused=0 env=0
+doGame: health=-2 immune=118 missionOver=309 reason=3 paused=0 env=0
+doGame: health=-32 immune=88 missionOver=279 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=249 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=219 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=189 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=159 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=129 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=99 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=69 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=39 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=9 reason=3 paused=0 env=0
+doGame: SALGO del bucle reason=3 health=-60
+gameover(): entrando canContinue=3 boss=0
+doGame: health=4 immune=130 missionOver=134 reason=2 paused=0 env=2
+doGame: health=4 immune=130 missionOver=104 reason=2 paused=0 env=2
+doGame: health=4 immune=130 missionOver=74 reason=2 paused=0 env=2
+doGame: health=4 immune=130 missionOver=44 reason=2 paused=0 env=2
+doGame: health=4 immune=130 missionOver=14 reason=2 paused=0 env=2
+doGame: health=-17 immune=103 missionOver=294 reason=3 paused=0 env=0
+doGame: health=-47 immune=73 missionOver=264 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=234 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=204 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=174 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=144 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=114 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=84 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=54 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=24 reason=3 paused=0 env=0
+doGame: SALGO del bucle reason=3 health=-60
+gameover(): entrando canContinue=3 boss=0
+doGame: health=-7 immune=113 missionOver=304 reason=3 paused=0 env=0
+doGame: health=-37 immune=83 missionOver=274 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=244 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=214 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=184 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=154 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=124 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=94 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=64 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=34 reason=3 paused=0 env=0
+doGame: health=-60 immune=60 missionOver=4 reason=3 paused=0 env=0
+doGame: SALGO del bucle reason=3 health=-60
+gameover(): entrando canContinue=3 boss=0
+doGame: SALGO del bucle reason=8 health=5
+doGame: health=7 immune=153 missionOver=0 reason=0 paused=0 env=0
+doGame: health=7 immune=123 missionOver=0 reason=0 paused=0 env=0
+doGame: health=4 immune=152 missionOver=0 reason=0 paused=0 env=0
+doGame: health=4 immune=122 missionOver=0 reason=0 paused=0 env=0
+doGame: health=-29 immune=151 missionOver=282 reason=3 paused=0 env=0
+doGame: health=-59 immune=121 missionOver=252 reason=3 paused=0 env=0
+doGame: health=-60 immune=120 missionOver=222 reason=3 paused=0 env=0
+doGame: health=-60 immune=120 missionOver=192 reason=3 paused=0 env=0
+doGame: health=-60 immune=120 missionOver=162 reason=3 paused=0 env=0
+doGame: health=-60 immune=120 missionOver=132 reason=3 paused=0 env=0
+doGame: health=-60 immune=120 missionOver=102 reason=3 paused=0 env=0
+doGame: health=-60 immune=120 missionOver=72 reason=3 paused=0 env=0
+doGame: health=-60 immune=120 missionOver=42 reason=3 paused=0 env=0
+doGame: health=-60 immune=120 missionOver=12 reason=3 paused=0 env=0
+doGame: SALGO del bucle reason=3 health=-60
+gameover(): entrando canContinue=0 boss=0

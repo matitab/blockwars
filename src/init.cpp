@@ -169,6 +169,25 @@ bool loadConfig()
 		rtn = true;
 	}
 
+	// Opciones de jugabilidad (mod), en una segunda linea. Si el config no la tiene (version
+	// anterior) no se marca error ni se muestra la licencia: quedan los valores por defecto de Game
+	int extra[5];
+
+	if (fscanf(fp, "%10d %10d %10d %10d %10d", &extra[0], &extra[1], &extra[2], &extra[3], &extra[4]) == 5)
+	{
+		game.mouseAim = extra[0];
+		game.bulletTrail = extra[1];
+		game.grenadePreview = extra[2];
+		game.cameraLead = extra[3];
+		game.screenShake = extra[4];
+
+		Math::limitInt(&game.mouseAim, 0, 1);
+		Math::limitInt(&game.bulletTrail, 0, 1);
+		Math::limitInt(&game.grenadePreview, 0, 1);
+		Math::limitInt(&game.cameraLead, 0, 3);
+		Math::limitInt(&game.screenShake, 0, 3);
+	}
+
 	fclose(fp);
 
 	debug(("Extreme Mode = %d\n", engine.extremeAvailable));
@@ -202,6 +221,7 @@ void saveConfig()
 
 	fprintf(fp, "%f %d\n", VERSION, RELEASE);
 	fprintf(fp, "%d %d %d %d %d %d %d\n", engine.fullScreen, game.musicVol, game.soundVol, game.output, game.brightness, engine.extremeAvailable, game.gore);
+	fprintf(fp, "%d %d %d %d %d\n", game.mouseAim, game.bulletTrail, game.grenadePreview, game.cameraLead, game.screenShake);
 
 	fclose(fp);
 	

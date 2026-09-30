@@ -26,6 +26,12 @@ void resetGrenadeCharge();
 bool handlePlayerGrenade(bool fireHeld);
 void drawGrenadeCharge();
 
+// Mouse aiming (defined in bullets.cpp)
+void updatePlayerAim(bool keyboardFire);
+bool isMouseAiming();
+bool takePlayerReloadRequest();
+void drawPlayerCrosshair();
+
 // Player ammo / clip system
 int playerAmmo = 0;
 int playerAmmoMax = 0;
@@ -33,9 +39,26 @@ bool playerReloading = false;
 int playerReloadTotal = 0;
 static const int RELOAD_MULTIPLIER = 3;
 
+// Limited-use weapons: a fixed number of shots per pickup, then back to the pistol
+static const int WEAPON_PLAYER_ROCKET = 21; // player rocket launcher (data/weapons)
+static const int GRENADE_SHOTS = 3;
+static const int ROCKET_SHOTS = 1;
+
+// Shots allowed by the current weapon, or 0 if it is not a limited-use weapon
+static int getLimitedShots()
+{
+	if (player.currentWeapon == &weapon[WP_GRENADES])
+		return GRENADE_SHOTS;
+	if (player.currentWeapon == &weapon[WEAPON_PLAYER_ROCKET])
+		return ROCKET_SHOTS;
+	return 0;
+}
+
 void resetPlayerAmmo()
 {
 	playerAmmoMax = player.currentWeapon->clip;
+	if (getLimitedShots() > 0)
+		playerAmmoMax = getLimitedShots();
 	if (playerAmmoMax > 0)
 		playerAmmo = playerAmmoMax;
 	else
@@ -47,6 +70,9 @@ void resetPlayerAmmo()
 void startPlayerReload()
 {
 	if (playerAmmoMax <= 0)
+		return;
+	// Limited-use weapons (grenades, rocket launcher) never reload: when the last shot is spent Bob goes back to the pistol
+	if (getLimitedShots() > 0)
 		return;
 	playerReloadTotal = player.currentWeapon->reload * RELOAD_MULTIPLIER;
 	if (playerReloadTotal < 30)
@@ -555,9 +581,29 @@ void doPlayer()
 		player.y = (MAPHEIGHT * BRICKSIZE) + 64;
 	}
 
-	bool fireHeld = config.isControl(CONTROL::FIRE);
+	// Mouse aiming: points the shot and Bob's face at the cursor, left click fires
+	bool keyFire = config.isControl(CONTROL::FIRE);
+	updatePlayerAim(keyFire);
+
+	// Right click reloads before the clip is empty (only if there is a clip and it is not full; never for grenades or rockets)
+	if ((takePlayerReloadRequest()) && (getLimitedShots() == 0) && (playerAmmoMax > 0) && (!playerReloading) && (playerAmmo < playerAmmoMax))
+	{
+		resetGrenadeCharge(); // drop a grenade that was being charged
+		startPlayerReload();
+	}
+
+	bool fireHeld = keyFire || (isMouseAiming() && (engine.mouseLeft != 0));
 
 	updatePlayerReload();
+
+	// Limited-use weapons (grenades, rocket launcher): once the last shot is spent, back to the pistol
+	if ((getLimitedShots() > 0) && (playerAmmo == 0))
+	{
+		player.currentWeapon = &weapon[WP_PISTOL];
+		game.currentWeapon = WP_PISTOL;
+		resetPlayerAmmo();
+		player.reload = player.currentWeapon->reload;
+	}
 
 	// Grenades are charged while FIRE is held and thrown on release.
 	// For every other weapon this returns false and firing works as before.
@@ -579,7 +625,8 @@ void doPlayer()
 						addBullet(&player, player.currentWeapon->getSpeed(player.face), 2);
 						addBullet(&player, player.currentWeapon->getSpeed(player.face), -2);
 					}
-					if (playerAmmoMax > 0)
+					// Only the pistol can fire underwater, so a limited-use weapon keeps its shot there
+					if ((playerAmmoMax > 0) && (!((getLimitedShots() > 0) && (player.environment == ENV_WATER))))
 					{
 						playerAmmo--;
 						if (playerAmmo == 0)
@@ -636,5 +683,6 @@ void doPlayer()
 	{
 		drawGrenadeCharge();
 		drawPlayerAmmo();
+		drawPlayerCrosshair();
 	}
 }

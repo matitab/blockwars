@@ -31,6 +31,12 @@ Game::Game()
 	gore = 1;
 	skill = 1;
 
+	mouseAim = 1;
+	bulletTrail = 1;
+	grenadePreview = 1;
+	cameraLead = 2;
+	screenShake = 2;
+
 	clear();
 }
 
@@ -52,7 +58,7 @@ void Game::clear()
 	autoSaveSlot = 0;
 
 	currentWeapon = 0;
-	for (int i = 0 ; i < 5 ; i++)
+	for (int i = 0 ; i < MAX_WEAPONS ; i++)
 	{
 		bulletsHit[i] = bulletsFired[i] = 0;
 	}
@@ -132,16 +138,27 @@ void Game::doCombo()
 
 void Game::incBulletsFired()
 {
-	bulletsFired[currentWeapon]++;
+	if (currentWeapon < MAX_WEAPONS)
+	{
+		bulletsFired[currentWeapon]++;
+	}
 }
 
 void Game::incBulletsHit()
 {
-	bulletsHit[currentWeapon]++;
+	if (currentWeapon < MAX_WEAPONS)
+	{
+		bulletsHit[currentWeapon]++;
+	}
 }
 
 int Game::getWeaponAccuracy(int weapon)
 {
+	if ((weapon < 0) || (weapon >= MAX_WEAPONS))
+	{
+		return 0;
+	}
+
 	if (bulletsHit[weapon])
 	{
 		return (int)(((0.0 + bulletsHit[weapon]) / (0.0 + bulletsFired[weapon])) * 100.0);
@@ -152,13 +169,25 @@ int Game::getWeaponAccuracy(int weapon)
 
 int Game::getTotalBulletsFired() const
 {
-	return bulletsFired[0] + bulletsFired[1] + bulletsFired[2] + bulletsFired[3] + bulletsFired[4];
+	int total = 0;
+
+	for (int i = 0 ; i < MAX_WEAPONS ; i++)
+	{
+		total += bulletsFired[i];
+	}
+
+	return total;
 }
 
 int Game::getTotalAccuracy()
 {
 	int fired = getTotalBulletsFired();
-	int hits = bulletsHit[0] + bulletsHit[1] + bulletsHit[2] + bulletsHit[3] + bulletsHit[4];
+	int hits = 0;
+
+	for (int i = 0 ; i < MAX_WEAPONS ; i++)
+	{
+		hits += bulletsHit[i];
+	}
 
 	if (hits)
 	{
@@ -173,6 +202,8 @@ int Game::getMostUsedWeapon()
 	unsigned int mostUsed = 0;
 	unsigned int mostFired = 0;
 
+	// Only the five original weapons (0 to 4) are considered, so callers that index
+	// their own tables with the result keep receiving a value in that range
 	for (int i = 0 ; i < 5 ; i++)
 	{
 		if (bulletsFired[i] > mostFired)

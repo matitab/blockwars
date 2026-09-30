@@ -13,5 +13,7 @@
 12 "Points5" PointsPod5 125
 13 "Points6" PointsPod6 150
 14 "Points7" PointsPod7 200
+15 "Rocket Launcher" RocketIcon 1
+16 "Plasma Gun" PlasmaIcon 1
 
 @EOF@

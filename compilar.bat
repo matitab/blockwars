@@ -1,20 +1,24 @@
 @echo off
 setlocal
 
-REM Configurar PATH para MSYS2
 set PATH=C:\Users\Usuario\Desktop\Proyectos\MSYS2\ucrt64\bin;C:\Users\Usuario\Desktop\Proyectos\MSYS2\usr\bin;%PATH%
 
-REM Compilar
 echo Compilando blobwars...
-C:\Users\Usuario\Desktop\Proyectos\MSYS2\usr\bin\make.exe -f Makefile.windows
+make.exe -f Makefile.windows
+if %ERRORLEVEL% NEQ 0 goto error
 
-if %ERRORLEVEL% EQU 0 (
-    echo.
-    echo Compilacion exitosa!
-    echo Ejecutable: blobwars.exe
-) else (
-    echo.
-    echo Error en la compilacion.
-)
+echo Regenerando blobwars.pak...
+if exist blobwars.pak del blobwars.pak
+make.exe -f Makefile.windows buildpak
+if %ERRORLEVEL% NEQ 0 goto error
 
+echo.
+echo Compilacion exitosa!
+goto fin
+
+:error
+echo.
+echo Error en la compilacion.
+
+:fin
 pause

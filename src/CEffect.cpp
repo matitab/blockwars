@@ -47,13 +47,17 @@ void Effect::create(float x, float y, float dx, float dy, int flags)
 	this->dy = dy;
 	this->flags = flags;
 
-	this->health = 120;
+	// Duracion variable para que los efectos no desaparezcan todos a la vez
+	this->health = Math::rrand(90, 150);
 }
 
 void Effect::update()
 {
 	x += dx;
 	y += dy;
+
+	// Rozamiento con el aire: el movimiento horizontal se apaga poco a poco
+	dx *= 0.985f;
 
 	if (!(flags & EFF_WEIGHTLESS))
 	{

@@ -1,0 +1,9 @@
+RADIO mouseaim gameplay "Mouse Aiming" "Off|On" 100 65 0 1
+RADIO trail gameplay "Bullet Trails" "Off|On" 100 100 0 1
+RADIO preview gameplay "Grenade Preview" "Off|On" 100 135 0 1
+RADIO camlead gameplay "Camera Lead" "Off|Low|Mid|High" 100 170 0 3
+RADIO shake gameplay "Screen Shake" "Off|Low|Mid|High" 100 205 0 3
+
+BUTTON confirm gameplay "Exit" "*" 100 260 0 100
+
+END

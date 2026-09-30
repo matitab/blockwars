@@ -32,3 +32,6 @@ blobwars
 
 # Debug files
 *.dSYM/
+
+# Pak files
+*.pak

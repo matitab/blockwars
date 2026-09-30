@@ -42,7 +42,7 @@ bool okayToSpawnEnemy(const char *name, int x, int y)
 		train = (Train*)train->next;
 
 		// assume enemy is 20 x 20 pixels (most are at least) and trains are 64 x 64
-		if (Collision::collision(x * BRICKSHIFT, y * BRICKSHIFT, 20, 20, train->x, train->y, 64, 64))
+		if (Collision::collision(x << BRICKSHIFT, y << BRICKSHIFT, 20, 20, train->x, train->y, 64, 64))
 		{
 			debug(("Couldn't add enemy '%s' - Collided with train\n", name));
 			return false;
@@ -263,7 +263,7 @@ void doSpawnPoints()
 					x += Math::rrand(-10, 10);
 					y += Math::rrand(-10, 10);
 
-					if ((x >= 0) && (y >= 0))
+					if ((x >= 0) && (y >= 0) && (x < MAPWIDTH) && (y < MAPHEIGHT))
 					{
 						if (map.data[x][y] == MAP_AIR)
 						{
@@ -281,7 +281,7 @@ void doSpawnPoints()
 					if (game.missionOverReason != MIS_INPROGRESS)
 						break;
 					
-					if (map.boss[sp->spawnSubType]->health > 0)
+					if ((map.boss[sp->spawnSubType] != NULL) && (map.boss[sp->spawnSubType]->health > 0))
 					{
 						map.boss[sp->spawnSubType]->active = true;
 					}

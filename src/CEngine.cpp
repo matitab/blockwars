@@ -23,6 +23,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <errno.h>
 extern Graphics graphics;
 
+// Efectos de camara (bullets.cpp y explosions.cpp)
+void getCameraLead(int *leadX, int *leadY);
+void getScreenShake(int *shakeX, int *shakeY);
+
 Engine::Engine()
 {
 	memset(keyState, 0, sizeof keyState);
@@ -32,6 +36,7 @@ Engine::Engine()
 	joyX = joyY = 0;
 
 	mouseLeft = mouseRight = 0;
+	mouseX = mouseY = 0;
 	waitForButton = false;
 	waitForKey = false;
 	
@@ -517,6 +522,19 @@ void Engine::setPlayerPosition(int x, int y, int limitLeft, int limitRight, int 
 		limitDown -= (graphics.screen->h - 480);
 		if (limitDown < limitUp)
 			limitDown = limitUp;
+	}
+
+	// Solo en pantallas que scrollean: adelanto hacia la mira y temblor por explosiones.
+	// Se suma antes de aplicar los limites, asi la camara nunca sale del mapa.
+	if (limitRight >= 0)
+	{
+		int leadX = 0, leadY = 0, shakeX = 0, shakeY = 0;
+
+		getCameraLead(&leadX, &leadY);
+		getScreenShake(&shakeX, &shakeY);
+
+		x += leadX + shakeX;
+		y += leadY + shakeY;
 	}
 
 	playerPosX = x - OFFSETX;

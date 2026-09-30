@@ -21,6 +21,106 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "traps.h"
 
+/*
+	Cola de explosiones pendientes. addExplosion() solo anota aca (no toca
+	trapList) y doTraps() las procesa al comienzo del fotograma siguiente.
+	Asi nunca se modifica la lista mientras se la recorre, y las reacciones
+	en cadena avanzan un fotograma por eslabon en lugar de recursar.
+*/
+#define MAX_TRAP_BLASTS 64
+
+struct TrapBlast
+{
+	float x, y;
+	int radius;
+};
+
+static TrapBlast trapBlasts[MAX_TRAP_BLASTS];
+static int trapBlastCount = 0;
+
+/**
+* Avisa a las trampas que hubo una explosion. Las minas activas dentro del
+* radio detonan en el proximo doTraps(). Llamar al comienzo de addExplosion().
+* @param x Centro X de la explosion
+* @param y Centro Y de la explosion
+* @param radius Radio de la explosion
+*/
+void requestTrapBlast(float x, float y, int radius)
+{
+	// descarta pedidos casi identicos (las minas lanzan 10 explosiones juntas)
+	for (int i = 0 ; i < trapBlastCount ; i++)
+	{
+		float dx = trapBlasts[i].x - x;
+		float dy = trapBlasts[i].y - y;
+
+		if ((dx * dx + dy * dy < 400) && (trapBlasts[i].radius >= radius))
+			return;
+	}
+
+	if (trapBlastCount >= MAX_TRAP_BLASTS)
+		return;
+
+	trapBlasts[trapBlastCount].x = x;
+	trapBlasts[trapBlastCount].y = y;
+	trapBlasts[trapBlastCount].radius = radius;
+	trapBlastCount++;
+}
+
+/**
+* Detona las minas activas que quedaron dentro del radio de las explosiones
+* pedidas con requestTrapBlast(). Las minas se quitan del mapa y explotan
+* igual que cuando las pisa el jugador.
+*/
+static void processTrapBlasts()
+{
+	if (trapBlastCount == 0)
+		return;
+
+	// copia local: las explosiones nuevas van a la cola vacia (fotograma siguiente)
+	TrapBlast todo[MAX_TRAP_BLASTS];
+	int count = trapBlastCount;
+	memcpy(todo, trapBlasts, sizeof(TrapBlast) * count);
+	trapBlastCount = 0;
+
+	for (int i = 0 ; i < count ; i++)
+	{
+		Trap *trap = (Trap*)map.trapList.getHead();
+		Trap *previous = trap;
+
+		while (trap->next != NULL)
+		{
+			trap = (Trap*)trap->next;
+
+			if ((trap->type != TRAP_TYPE_MINE) || (!trap->active))
+			{
+				previous = trap;
+				continue;
+			}
+
+			float cx = trap->x + (trap->sprite->image[0]->w / 2);
+			float cy = trap->y + (trap->sprite->image[0]->h / 2);
+			float dx = cx - todo[i].x;
+			float dy = cy - todo[i].y;
+			float r = (float)todo[i].radius;
+
+			if (dx * dx + dy * dy > r * r)
+			{
+				previous = trap;
+				continue;
+			}
+
+			// se quita primero y se explota despues, con los datos ya copiados
+			map.trapList.remove(previous, trap);
+			trap = previous;
+
+			for (int j = 0 ; j < 10 ; j++)
+			{
+				addExplosion(cx + Math::rrand(-15, 15), cy + Math::rrand(-15, 15), 50, &engine.world);
+			}
+		}
+	}
+}
+
 /**
 * Adds a trap to the map
 * @param name The name of the trap group
@@ -179,6 +279,8 @@ bool doTrapCollisions(Trap *trap)
 */
 void doTraps()
 {
+	processTrapBlasts();
+
 	Trap *trap = (Trap*)map.trapList.getHead();
 	Trap *previous = trap;
 

@@ -31,6 +31,7 @@ class Game {
 		char stageName[50];
 
 		int gore, skill, soundVol, musicVol, output, brightness, autoSaveSlot, autoSave;
+		int mouseAim, bulletTrail, grenadePreview, cameraLead, screenShake;
 
 		int score, stagesCleared;
 		int totalHours, totalMinutes, totalSeconds;
@@ -40,7 +41,7 @@ class Game {
 		int totalObjectivesCompleted, totalMIAsRescued;
 
 		unsigned char currentWeapon;
-		unsigned int bulletsFired[5], bulletsHit[5];
+		unsigned int bulletsFired[MAX_WEAPONS], bulletsHit[MAX_WEAPONS];
 
 		int checkPointX, checkPointY;
 		int teleportPointX, teleportPointY;
