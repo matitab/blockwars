@@ -427,7 +427,7 @@ void addBullet(Entity *owner, float dx, float dy)
 	{
 		game.incBulletsFired();
 
-		// straight shots (not lobbed ones) warn utility droids standing in their line of fire
+		// Straight shots trigger an immediate reaction; active projectiles are also tracked by enemy AI.
 		if (bullet->flags & ENT_WEIGHTLESS)
 		{
 			notifyPlayerShot(player.x + (player.width / 2.0f), player.y + (player.height / 2.0f), bullet->dx, bullet->dy);

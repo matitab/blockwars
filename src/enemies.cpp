@@ -95,8 +95,11 @@ struct EnemyAIState
 	int snapX, snapY; // where the droid was at the last of those checks
 	bool hasBadCover; // a spot it could not reach (stuck on the way): not chosen again
 	int badCoverX, badCoverY; // that spot
+	int shotEvadeTimer; // frames spent moving out of a player's shot line
+	int shotEvadeCooldown; // frames before reacting to another shot
+	int shotEvadeX, shotEvadeY; // temporary target perpendicular to the shot line
 
-	EnemyAIState() : telegraph(0), fireNow(false), fireTimeout(0), awareness(0), lostSight(0), alerted(false), canSee(false), lastX(0), lastY(0), prevX(0), stuck(0), maxHealth(0), burstLeft(0), burstTimeout(0), attackStamp(0), rank(0), squadLeader(NULL), confused(0), panicDir(1), grenadeX(0), grenadeY(0), grenadeTimer(0), telegraphTotal(0), charging(false), utilityDroid(false), shield(0), maxShield(0), dashes(0), rechargeTimer(0), stagger(0), safeMode(false), dashCooldown(0), dashReact(false), staggerImmune(0), lastDir(0), searching(false), searchX(0), searchDir(0), searchWait(0), energy(0.0f), maxEnergy(0.0f), laserMode(0), volleyMode(0), volleyTotal(0), volleyIndex(0), sweepDir(1), beamDir(1), beamTimer(0), beamTotal(0), beamTick(0), beamAngle(0.0f), beamStep(0.0f), beamLen(0.0f), hasCover(false), coverX(0), coverY(0), coverRetry(0), coverCheck(0), coverTimer(0), snapX(0), snapY(0), hasBadCover(false), badCoverX(0), badCoverY(0) {}
+	EnemyAIState() : telegraph(0), fireNow(false), fireTimeout(0), awareness(0), lostSight(0), alerted(false), canSee(false), lastX(0), lastY(0), prevX(0), stuck(0), maxHealth(0), burstLeft(0), burstTimeout(0), attackStamp(0), rank(0), squadLeader(NULL), confused(0), panicDir(1), grenadeX(0), grenadeY(0), grenadeTimer(0), telegraphTotal(0), charging(false), utilityDroid(false), shield(0), maxShield(0), dashes(0), rechargeTimer(0), stagger(0), safeMode(false), dashCooldown(0), dashReact(false), staggerImmune(0), lastDir(0), searching(false), searchX(0), searchDir(0), searchWait(0), energy(0.0f), maxEnergy(0.0f), laserMode(0), volleyMode(0), volleyTotal(0), volleyIndex(0), sweepDir(1), beamDir(1), beamTimer(0), beamTotal(0), beamTick(0), beamAngle(0.0f), beamStep(0.0f), beamLen(0.0f), hasCover(false), coverX(0), coverY(0), coverRetry(0), coverCheck(0), coverTimer(0), snapX(0), snapY(0), hasBadCover(false), badCoverX(0), badCoverY(0), shotEvadeTimer(0), shotEvadeCooldown(0), shotEvadeX(0), shotEvadeY(0) {}
 };
 
 static std::map<Entity*, EnemyAIState> aiState;
@@ -357,7 +360,13 @@ static const int MOVE_PRIO_DISTANCE = 1;   // hold, approach or back off to the 
 static const int MOVE_PRIO_SQUAD = 2;      // reserved for the squad post (not used yet)
 static const int MOVE_PRIO_COVER = 2;      // safe mode: go to cover (shares the slot of the unused squad post)
 static const int MOVE_PRIO_SEPARATION = 3; // don't stack on other enemies
-static const int MOVE_PRIO_GRENADE = 4;    // get away from a grenade (survival)
+static const int MOVE_PRIO_SHOT_EVADE = 4;  // move out of a player's shot line
+static const int MOVE_PRIO_GRENADE = 5;    // get away from a grenade (survival)
+static const int SHOT_EVADE_COOLDOWN = MAX_FPS;
+static const int SHOT_EVADE_FRAMES = 60;
+static const int SHOT_EVADE_DISTANCE = 80;
+static const int SHOT_EVADE_CHANCE = 30;
+static const int SHOT_DODGE_LOOKAHEAD = 12;
 
 // Active search: after losing sight of the player, an enemy that reaches the last known
 // position sweeps the area around it (one side, then the other) until it calms down.
@@ -2038,9 +2047,14 @@ void lookForPlayer(Entity *enemy)
 	{
 		if (!enemy->falling)
 		{
-			if ((Math::prand() % 100) == 0)
+			int horizontalGap = (int)fabs(player.x - enemy->x);
+			int jumpChance = (horizontalGap > 48) ? 30 : 100;
+
+			if ((Math::prand() % jumpChance) == 0)
 			{
-				enemy->dy = -12;
+				int direction = (player.x < enemy->x) ? -1 : 1;
+				int speed = Math::rrand(2, 4);
+				enemy->setVelocity(direction * speed, Math::rrand(-12, -10));
 			}
 		}
 	}
@@ -2380,10 +2394,78 @@ static void updateDroidDash(Entity *enemy, EnemyAIState &ai)
 	performDroidDash(enemy, ai, nx, ny);
 }
 
-// Called from addBullet() (bullets.cpp) at the instant the player fires a straight shot.
-// originX/Y = where the shot leaves Bob, dirX/Y = its direction. A utility droid standing in
-// that line (having detected Bob, with a clear shot, in range, dash ready and shield up) dashes right away, to a spot
-// that is NOT on the line of fire. Bullets already in the air are never looked at.
+static void startShotEvasion(Entity *enemy, EnemyAIState &ai, float dirX, float dirY)
+{
+	float length = sqrtf((dirX * dirX) + (dirY * dirY));
+	if (length < 0.01f)
+		return;
+
+	dirX /= length;
+	dirY /= length;
+	float sideX = -dirY;
+	float sideY = dirX;
+	if ((Math::prand() % 2) == 0)
+	{
+		sideX = -sideX;
+		sideY = -sideY;
+	}
+
+	ai.shotEvadeTimer = SHOT_EVADE_FRAMES;
+	ai.shotEvadeCooldown = SHOT_EVADE_COOLDOWN;
+	ai.shotEvadeX = (int)(enemy->x + (sideX * SHOT_EVADE_DISTANCE));
+	ai.shotEvadeY = (int)(enemy->y + (sideY * SHOT_EVADE_DISTANCE));
+	Math::limitInt(&ai.shotEvadeX, 15, (MAPWIDTH * BRICKSIZE) - 20);
+	Math::limitInt(&ai.shotEvadeY, 15, (MAPHEIGHT * BRICKSIZE) - 20);
+
+	if (enemy->flags & (ENT_FLIES|ENT_SWIMS))
+		enemy->ty = ai.shotEvadeY;
+	else if (!(enemy->flags & ENT_NOJUMP) && (!enemy->falling))
+		enemy->dy = Math::rrand(-120, -100) / 10.0f;
+}
+
+static bool findIncomingPlayerShot(Entity *enemy, float *dirX, float *dirY)
+{
+	Entity *bullet = (Entity*)map.bulletList.getHead();
+	float enemyX = enemy->x + (enemy->width / 2.0f);
+	float enemyY = enemy->y + (enemy->height / 2.0f);
+
+	while (bullet->next != NULL)
+	{
+		bullet = (Entity*)bullet->next;
+
+		if ((bullet->owner != &player) || (bullet->health <= 0))
+			continue;
+
+		if ((bullet->flags & ENT_EXPLODES) && (fabsf(bullet->dx) < 0.1f) && (fabsf(bullet->dy) < 0.1f))
+			continue;
+
+		float relativeX = (bullet->x + (bullet->width / 2.0f)) - enemyX;
+		float relativeY = (bullet->y + (bullet->height / 2.0f)) - enemyY;
+		float relativeDX = bullet->dx - enemy->dx;
+		float relativeDY = bullet->dy - enemy->dy;
+		float gravity = (bullet->flags & ENT_WEIGHTLESS) ? 0.0f : 0.1f;
+		float hitRangeX = (enemy->width + bullet->width) / 2.0f + 4.0f;
+		float hitRangeY = (enemy->height + bullet->height) / 2.0f + 4.0f;
+
+		for (int frame = 1 ; frame <= SHOT_DODGE_LOOKAHEAD ; frame++)
+		{
+			float futureX = relativeX + (relativeDX * frame);
+			float futureY = relativeY + (relativeDY * frame) + (gravity * frame * (frame - 1) / 2.0f);
+
+			if ((fabsf(futureX) <= hitRangeX) && (fabsf(futureY) <= hitRangeY))
+			{
+				*dirX = bullet->dx;
+				*dirY = bullet->dy;
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+// Called from addBullet() at the instant the player fires a straight shot.
+// Utility droids dash when able; other mobile enemies try a short evasive move.
 void notifyPlayerShot(float originX, float originY, float dirX, float dirY)
 {
 	float len = sqrtf((dirX * dirX) + (dirY * dirY));
@@ -2405,17 +2487,23 @@ void notifyPlayerShot(float originX, float originY, float dirX, float dirY)
 
 		std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
 
-		if ((it == aiState.end()) || (!it->second.utilityDroid))
+		if (it == aiState.end())
 			continue;
 
 		EnemyAIState &ai = it->second;
 
-		// a droid that has not noticed Bob (no "!" yet) is not expecting the shot: it doesn't dodge
-		if ((ai.awareness < AWARE_ALERT) && (!ai.safeMode)) // in safe mode it is watching Bob closely
-			continue;
-
-		if ((ai.dashes <= 0) || ((ai.shield <= 0) && (!ai.safeMode)) || (ai.dashCooldown > 0) || (ai.stagger > 0) || (ai.confused > 0))
-			continue;
+		if (ai.utilityDroid)
+		{
+			// a droid that has not noticed Bob (no "!" yet) is not expecting the shot
+			if ((ai.awareness < AWARE_ALERT) && (!ai.safeMode))
+				continue;
+		}
+		else
+		{
+			if ((ai.awareness < AWARE_SUSPICIOUS) || (ai.shotEvadeCooldown > 0) ||
+				(enemy->flags & (ENT_STATIC|ENT_NOMOVE|ENT_INANIMATE|ENT_BOSS|ENT_GALDOV)))
+				continue;
+		}
 
 		float ex = (enemy->x + (enemy->width / 2.0f)) - originX;
 		float ey = (enemy->y + (enemy->height / 2.0f)) - originY;
@@ -2429,16 +2517,33 @@ void notifyPlayerShot(float originX, float originY, float dirX, float dirY)
 		if (!hasClearShot(enemy)) // a wall between them: the shot can't reach it anyway
 			continue;
 
-		if ((int)(Math::prand() % 100) >= DASH_DODGE_CHANCE)
+		if (ai.utilityDroid)
+		{
+			bool canDash = (ai.dashes > 0) && ((ai.shield > 0) || ai.safeMode) && (ai.dashCooldown <= 0) && (ai.stagger <= 0) && (ai.confused <= 0);
+
+			if (canDash && ((int)(Math::prand() % 100) < DASH_DODGE_CHANCE))
+			{
+				float line[5] = {originX, originY, dirX, dirY, reach + DASH_DODGE_CLEARANCE};
+				int nx, ny;
+
+				if (findDashSpot(enemy, false, &nx, &ny, line, ai.safeMode))
+				{
+					performDroidDash(enemy, ai, nx, ny);
+					continue;
+				}
+			}
+		}
+
+		int evadeChance = SHOT_EVADE_CHANCE;
+		if (ai.safeMode || ((ai.maxHealth > 0) && (enemy->health * 2 <= ai.maxHealth)))
+			evadeChance = 100;
+		else if ((ai.maxHealth > 0) && (enemy->health < ai.maxHealth))
+			evadeChance = 60;
+
+		if ((int)(Math::prand() % 100) >= evadeChance)
 			continue;
 
-		float line[5] = {originX, originY, dirX, dirY, reach + DASH_DODGE_CLEARANCE};
-		int nx, ny;
-
-		if (!findDashSpot(enemy, false, &nx, &ny, line, ai.safeMode))
-			continue;
-
-		performDroidDash(enemy, ai, nx, ny);
+		startShotEvasion(enemy, ai, dirX, dirY);
 	}
 }
 
@@ -2483,6 +2588,10 @@ static void updateDroidShield(Entity *enemy, EnemyAIState &ai)
 void doAI(Entity *enemy)
 {
 	EnemyAIState &ai = getAIState(enemy);
+	if (ai.shotEvadeTimer > 0)
+		ai.shotEvadeTimer--;
+	if (ai.shotEvadeCooldown > 0)
+		ai.shotEvadeCooldown--;
 
 	if (ai.telegraph > 0)
 	{
@@ -2534,6 +2643,14 @@ void doAI(Entity *enemy)
 
 	// notice the player (gradually) and head for where they were last seen
 	senseSurroundings(enemy, ai);
+
+	if ((ai.shotEvadeTimer <= 0) && (ai.shotEvadeCooldown <= 0) &&
+		(!(enemy->flags & (ENT_STATIC|ENT_NOMOVE|ENT_INANIMATE|ENT_BOSS|ENT_GALDOV))))
+	{
+		float shotDX, shotDY;
+		if (findIncomingPlayerShot(enemy, &shotDX, &shotDY))
+			startShotEvasion(enemy, ai, shotDX, shotDY);
+	}
 
 	// utility droid: teleport dashes
 	updateDroidDash(enemy, ai);
@@ -2761,9 +2878,14 @@ void doAI(Entity *enemy)
 			mv.propose(MOVE_PRIO_COVER, (int)((player.x < enemy->x) ? (enemy->x + 100) : (enemy->x - 100)));
 	}
 
+	if (ai.shotEvadeTimer > 0)
+		mv.propose(MOVE_PRIO_SHOT_EVADE, ai.shotEvadeX);
+
 	// apply the winning destination (nothing proposed = keep the current one)
 	if (mv.has)
 		enemy->tx = mv.tx;
+	if ((ai.shotEvadeTimer > 0) && (enemy->flags & (ENT_FLIES|ENT_SWIMS)))
+		enemy->ty = ai.shotEvadeY;
 
 	// the cover (or the flight from Bob) also sets the height it flies at
 	if (ai.safeMode && mv.has && (mv.prio == MOVE_PRIO_COVER))
@@ -2869,8 +2991,8 @@ void doAI(Entity *enemy)
 		ai.staggerImmune--;
 	}
 
-	// winding up a shot, firing a burst or a beam: hold still
-	if ((ai.telegraph > 0) || (ai.burstLeft > 0) || (ai.beamTimer > 0))
+	// winding up a shot, firing a burst or a beam: hold still unless evading a shot
+	if (((ai.telegraph > 0) || (ai.burstLeft > 0) || (ai.beamTimer > 0)) && (ai.shotEvadeTimer <= 0))
 	{
 		enemy->dx = 0;
 
@@ -2879,7 +3001,7 @@ void doAI(Entity *enemy)
 	}
 
 	// safe mode: it crawls, moving on only one frame in DROID_SAFE_MOVE_PERIOD
-	if (ai.safeMode && ((aiFrame % DROID_SAFE_MOVE_PERIOD) != 0))
+	if (ai.safeMode && (ai.shotEvadeTimer <= 0) && ((aiFrame % DROID_SAFE_MOVE_PERIOD) != 0))
 	{
 		if (!enemy->falling)
 			enemy->dx = 0;
