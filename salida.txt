@@ -1,0 +1,88 @@
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [data/vera.ttf] len=13
+DEBUG found match: location=305443 cSize=379441 fSize=757076
+DEBUG fread result=379441 expected=379441 ferror=0
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [sound/Lock And Load!!!] len=22
+DEBUG found match: location=9360048 cSize=40873 fSize=48008
+DEBUG fread result=40873 expected=40873 ferror=0
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [sound/menu] len=10
+DEBUG found match: location=9406545 cSize=1639 fSize=3056
+DEBUG fread result=1639 expected=1639 ferror=0
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [sound/select] len=12
+DEBUG found match: location=9520721 cSize=17546 fSize=27606
+DEBUG fread result=17546 expected=17546 ferror=0
+DEBUG loadImage: filename=[gfx/main/medal_bronze_1.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/medal_bronze_1.png] len=27
+DEBUG found match: location=7892071 cSize=682 fSize=671
+DEBUG fread result=682 expected=682 ferror=0
+DEBUG loadImage: filename=[gfx/main/award_star_silver_3.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/award_star_silver_3.png] len=32
+DEBUG found match: location=7592455 cSize=677 fSize=666
+DEBUG fread result=677 expected=677 ferror=0
+DEBUG loadImage: filename=[gfx/main/shield.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/shield.png] len=19
+DEBUG found match: location=8023504 cSize=681 fSize=670
+DEBUG fread result=681 expected=681 ferror=0
+DEBUG loadImage: filename=[gfx/main/ruby.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/ruby.png] len=17
+DEBUG found match: location=7956212 cSize=533 fSize=522
+DEBUG fread result=533 expected=533 ferror=0
+DEBUG loadImage: filename=[gfx/main/cc-by.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/cc-by.png] len=18
+DEBUG found match: location=7697326 cSize=1374 fSize=1363
+DEBUG fread result=1374 expected=1374 ferror=0
+DEBUG loadImage: filename=[gfx/main/cc-by-sa.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/cc-by-sa.png] len=21
+DEBUG found match: location=7695719 cSize=1607 fSize=1596
+DEBUG fread result=1607 expected=1607 ferror=0
+DEBUG loadImage: filename=[gfx/main/alienDevice.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/alienDevice.png] len=24
+DEBUG found match: location=7463200 cSize=218 fSize=213
+DEBUG fread result=218 expected=218 ferror=0
+DEBUG found match: location=208505 cSize=516 fSize=861
+DEBUG fread result=516 expected=516 ferror=0
+DEBUG getString: fontSize=0 in=[  Contacting Medal Server - www.parallelrealities.co.uk:80  ]
+DEBUG loadImage: filename=[gfx/main/cheats.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/cheats.png] len=19
+DEBUG found match: location=7698700 cSize=2245 fSize=2234
+DEBUG fread result=2245 expected=2245 ferror=0
+DEBUG loadImage: filename=[gfx/main/options.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/options.png] len=20
+DEBUG found match: location=7892753 cSize=2525 fSize=2514
+DEBUG fread result=2525 expected=2525 ferror=0
+DEBUG loadImage: filename=[gfx/main/joystickConfig.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/joystickConfig.png] len=27
+DEBUG found match: location=7744758 cSize=4503 fSize=4492
+DEBUG fread result=4503 expected=4503 ferror=0
+DEBUG loadImage: filename=[gfx/main/keyConfig.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/keyConfig.png] len=22
+DEBUG found match: location=7749261 cSize=2508 fSize=2497
+DEBUG fread result=2508 expected=2508 ferror=0
+DEBUG loadImage: filename=[gfx/main/optionsBackground.png]
+DEBUG pak entry: [data/mainSprites] len=16 vs searching [gfx/main/optionsBackground.png] len=30
+DEBUG found match: location=7895278 cSize=52977 fSize=53667
+DEBUG fread result=52977 expected=52977 ferror=0
+DEBUG getString: fontSize=0 in=[  No Medal Key found - Online functions disabled  ]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]
+DEBUG showError: error=[graphics::blit() - %s] param=[Blit combination not supported]

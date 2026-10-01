@@ -599,9 +599,9 @@ int doHub()
 
 	// The hub panels were laid out for 640x480. Keep them 640 wide but centred horizontally,
 	// the button bars anchored to the bottom and the info panel centred vertically.
-	const int dx = (graphics.screen->w - 640) / 2;
-	const int dyB = graphics.screen->h - 480;
-	const int dyC = (graphics.screen->h - 480) / 2;
+	const int dx = (graphics.logicalW() - 640) / 2;
+	const int dyB = graphics.logicalH() - 480;
+	const int dyC = (graphics.logicalH() - 480) / 2;
 
 	Uint32 frameLimit = SDL_GetTicks() + 16;
 	Uint32 now = SDL_GetTicks();
@@ -675,7 +675,7 @@ int doHub()
 
 				labelWidth = hubPoint->levelNameImage->w / 2;
 
-				Math::limitInt(&labelX, 10 + labelWidth, graphics.screen->w - 10 - labelWidth);
+				Math::limitInt(&labelX, 10 + labelWidth, graphics.logicalW() - 10 - labelWidth);
 
 				graphics.blit(hubPoint->levelNameImage, labelX, labelY, graphics.screen, true);
 

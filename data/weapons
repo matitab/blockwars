@@ -24,4 +24,6 @@
 21 "Player Rocket Launcher"	5 100 240 8 0 45 FlameBulletRight FlameBulletLeft 11 ENT_WEIGHTLESS+ENT_FIRETRAIL+ENT_EXPLODES
 22 "Player Plasma Rifle"		6 12 60 8 0 14 PlasmaBolt PlasmaBolt 34 ENT_WEIGHTLESS+ENT_EXPLODES
 
+23 "Droid Laser"				23 2 90 10 10 12 DroidLaserBolt DroidLaserBolt 19 ENT_WEIGHTLESS
+
 @EOF@

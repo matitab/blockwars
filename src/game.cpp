@@ -44,8 +44,8 @@ void showInGameOptions()
 	}
 
 	// The menu box was laid out for 640x480 (120,100): centre it on the real surface
-	const int boxX = (graphics.screen->w - 400) / 2;
-	const int boxY = (graphics.screen->h - 300) / 2;
+	const int boxX = (graphics.logicalW() - 400) / 2;
+	const int boxY = (graphics.logicalH() - 300) / 2;
 
 	graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
 
@@ -337,7 +337,7 @@ int gameover()
 		doGameStuff();
 		drawMapTopLayer();
 
-		graphics.blit(gameover, graphics.screen->w / 2, graphics.screen->h / 2, graphics.screen, true);
+		graphics.blit(gameover, graphics.logicalW() / 2, graphics.logicalH() / 2, graphics.screen, true);
 
 		if (engine.userAccepts())
 		{
@@ -516,8 +516,8 @@ void showMissionInformation()
 
 		doGameStuff();
 		drawMapTopLayer();
-		graphics.blit(panelBack, graphics.screen->w / 2, (graphics.screen->h / 2) - 20, graphics.screen, true);
-		graphics.blit(panel, graphics.screen->w / 2, (graphics.screen->h / 2) - 20, graphics.screen, true);
+		graphics.blit(panelBack, graphics.logicalW() / 2, (graphics.logicalH() / 2) - 20, graphics.screen, true);
+		graphics.blit(panel, graphics.logicalW() / 2, (graphics.logicalH() / 2) - 20, graphics.screen, true);
 
 		engine.delay(frameLimit);
 		frameLimit = SDL_GetTicks() + 16;

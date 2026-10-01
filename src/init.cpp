@@ -43,10 +43,10 @@ void showLicense()
 	SDL_FillRect(graphics.screen, NULL, graphics.black);
 	SDL_Surface *pic = graphics.loadImage("gfx/main/licensePic.png");
 	// Layout designed for 640x480: centre it on the real surface
-	const int dx = (graphics.screen->w - 640) / 2;
-	const int dy = (graphics.screen->h - 480) / 2;
+	const int dx = (graphics.logicalW() - 640) / 2;
+	const int dy = (graphics.logicalH() - 480) / 2;
 
-	graphics.blit(pic, (graphics.screen->w - pic->w) / 2, (graphics.screen->h - pic->h) / 2, graphics.screen, false);
+	graphics.blit(pic, (graphics.logicalW() - pic->w) / 2, (graphics.logicalH() - pic->h) / 2, graphics.screen, false);
 	SDL_FreeSurface(pic);
 
 	checkForLicense();
@@ -310,19 +310,22 @@ void initSystem()
 		exit(1);
 	}
 
-	graphics.screen = SDL_CreateRGBSurface(0, 1280, 720, 32, 0xff0000, 0xff00, 0xff, 0xff000000);
+	// The surface is HIRES_SCALE times bigger than the logical 1280x720 view
+	graphics.setRenderScale(HIRES_SCALE);
+
+	graphics.screen = SDL_CreateRGBSurface(0, 1280 * graphics.renderScale, 720 * graphics.renderScale, 32, 0xff0000, 0xff00, 0xff, 0xff000000);
 
 	if (graphics.screen == NULL)
 	{
-		printf("Couldn't set 1280x720 video mode: %s\n", SDL_GetError());
+		printf("Couldn't set %dx%d video mode: %s\n", 1280 * graphics.renderScale, 720 * graphics.renderScale, SDL_GetError());
 		exit(1);
 	}
 
 	// Increase the size of the window if we have large desktop resolutions
 	SDL_DisplayMode displayMode = {};
 	SDL_GetDesktopDisplayMode(0, &displayMode);
-	int w = graphics.screen->w;
-	int h = graphics.screen->h;
+	int w = graphics.logicalW();
+	int h = graphics.logicalH();
 	while (displayMode.w > w * 2 && displayMode.h > h * 2)
 	{
 		w *= 2;
@@ -343,6 +346,13 @@ void initSystem()
 	{
 		printf("Couldn't create renderer: %s\n", SDL_GetError());
 		exit(1);
+	}
+
+	// Texture and renderer size must match the real surface, not the logical size
+	if (graphics.renderScale > 1)
+	{
+		// the surface is bigger than the window: smooth the reduction (applies to textures created from now on)
+		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
 	}
 
 	SDL_RenderSetLogicalSize(graphics.renderer, graphics.screen->w, graphics.screen->h);

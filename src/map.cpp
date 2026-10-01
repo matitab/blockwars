@@ -23,8 +23,18 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 // The automap panel (320x240) is centred on whatever size the screen currently has
 // (menus: 1280x720). The layout below was designed for 640x480 with the panel at (160,120).
-static int mapPanelX() { return (graphics.screen->w - 320) / 2; }
-static int mapPanelY() { return (graphics.screen->h - 240) / 2; }
+static int mapPanelX() { return (graphics.logicalW() - 320) / 2; }
+static int mapPanelY() { return (graphics.logicalH() - 240) / 2; }
+
+static void drawMapTile(int tile, int x, int y)
+{
+	SDL_Surface *image = graphics.tile[tile];
+
+	if ((image->w >= (BRICKSIZE * 2)) && (image->h >= (BRICKSIZE * 2)))
+		graphics.blitScaled(image, x, y, BRICKSIZE, BRICKSIZE, graphics.screen);
+	else
+		graphics.blit(image, x, y, graphics.screen, false);
+}
 
 void drawMap()
 {
@@ -43,9 +53,9 @@ void drawMap()
 	int mapy = offsetY >> BRICKSHIFT;
 	int brick = 0;
 
-	for (int x = 0 ; x < (graphics.screen->w / BRICKSIZE) + 2 ; x++)
+	for (int x = 0 ; x < (graphics.logicalW() / BRICKSIZE) + 2 ; x++)
 	{
-		for (int y = 0 ; y < (graphics.screen->h / BRICKSIZE) + 2 ; y++)
+		for (int y = 0 ; y < (graphics.logicalH() / BRICKSIZE) + 2 ; y++)
 		{
 			brick = map.data[mapx + x][mapy + y];
 
@@ -55,7 +65,7 @@ void drawMap()
 
    			if ((brick >= MAP_BREAKABLE) && (brick < MAP_WATERANIM))
 			{
-				graphics.blit(graphics.tile[brick], r.x, r.y, graphics.screen, false);
+				drawMapTile(brick, r.x, r.y);
 				
 				#if DEBUG
 				if ((brick >= MAP_NORESET) && (brick < MAP_DECORATION))
@@ -83,9 +93,9 @@ void drawMapTopLayer()
 
 	int brick;
 
-	for (int x = 0 ; x < (graphics.screen->w / BRICKSIZE) + 2 ; x++)
+	for (int x = 0 ; x < (graphics.logicalW() / BRICKSIZE) + 2 ; x++)
 	{
-		for (int y = 0 ; y < (graphics.screen->h / BRICKSIZE) + 2 ; y++)
+		for (int y = 0 ; y < (graphics.logicalH() / BRICKSIZE) + 2 ; y++)
 		{
 			r.x = ((x * BRICKSIZE) - (offsetX & (BRICKSIZE - 1)));
 			r.y = ((y * BRICKSIZE) - (offsetY & (BRICKSIZE - 1)));
@@ -122,7 +132,7 @@ void drawMapTopLayer()
 					brick = map.data[mapx + x][mapy + y];
 				}
 
-				graphics.blit(graphics.tile[brick], r.x, r.y, graphics.screen, false);
+				drawMapTile(brick, r.x, r.y);
 			}
 		}
 	}
@@ -280,7 +290,7 @@ void showMap(int centerX, int centerY)
 
 	const int px = mapPanelX();
 	const int py = mapPanelY();
-	const int cx = graphics.screen->w / 2;
+	const int cx = graphics.logicalW() / 2;
 	const int dy = py - 120;	// vertical shift of the original 640x480 layout
 
 	x1 = centerX - 32;

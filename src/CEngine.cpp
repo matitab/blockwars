@@ -182,8 +182,9 @@ void Engine::getInput()
 				break;
 
 			case SDL_MOUSEMOTION:
-				mouseX = event.motion.x;
-				mouseY = event.motion.y;
+				// SDL gives the position on the (scaled) screen surface: convert to logical units
+				mouseX = event.motion.x / graphics.renderScale;
+				mouseY = event.motion.y / graphics.renderScale;
 				break;
 
 			case SDL_KEYDOWN:
@@ -331,8 +332,8 @@ void Engine::moveMouse(int dx, int dy)
 {
 	mouseX += dx;
 	mouseY += dy;
-	Math::limitInt(&mouseX, 0, 1280);
-	Math::limitInt(&mouseY, 0, 720);
+	Math::limitInt(&mouseX, 0, graphics.logicalW());
+	Math::limitInt(&mouseY, 0, graphics.logicalH());
 }
 
 bool Engine::userAccepts()
@@ -512,14 +513,14 @@ void Engine::setPlayerPosition(int x, int y, int limitLeft, int limitRight, int 
 	// Negative limits (-1) are used by screens that don't scroll: leave them alone.
 	if (limitRight >= 0)
 	{
-		limitRight -= (graphics.screen->w - 640);
+		limitRight -= (graphics.logicalW() - 640);
 		if (limitRight < limitLeft)
 			limitRight = limitLeft;
 	}
 
 	if (limitDown >= 0)
 	{
-		limitDown -= (graphics.screen->h - 480);
+		limitDown -= (graphics.logicalH() - 480);
 		if (limitDown < limitUp)
 			limitDown = limitUp;
 	}

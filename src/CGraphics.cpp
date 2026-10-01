@@ -26,6 +26,134 @@ void SDL_SetAlpha(SDL_Surface *surface, uint8_t value) {
 	SDL_SetSurfaceAlphaMod(surface, value);
 }
 
+/*
+	Diagnostico + respaldo para blits que SDL rechaza ("Blit combination not supported").
+	Imprime las primeras fallas con formato y tamano de origen/destino y reintenta con
+	una copia del origen convertida a ARGB8888 (escalada a mano si hace falta).
+*/
+static void reportBlitFail(const char *where, SDL_Surface *src, SDL_Surface *dst)
+{
+	static int reported = 0;
+
+	if (reported >= 8)
+		return;
+
+	reported++;
+
+	printf("BLIT FAIL (%s): %s\n", where, SDL_GetError());
+	printf("  src: %p %dx%d fmt=%s bpp=%d\n", (void*)src,
+		src ? src->w : 0, src ? src->h : 0,
+		src ? SDL_GetPixelFormatName(src->format->format) : "null",
+		src ? src->format->BitsPerPixel : 0);
+	printf("  dst: %p %dx%d fmt=%s bpp=%d\n", (void*)dst,
+		dst ? dst->w : 0, dst ? dst->h : 0,
+		dst ? SDL_GetPixelFormatName(dst->format->format) : "null",
+		dst ? dst->format->BitsPerPixel : 0);
+	fflush(stdout);
+}
+
+static SDL_Surface *toARGB32(SDL_Surface *src)
+{
+	// SDL_ConvertSurfaceFormat conserva colorkey y blend mode del origen
+	return SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ARGB8888, 0);
+}
+
+static int safeBlit(SDL_Surface *src, const SDL_Rect *srcRect, SDL_Surface *dst, SDL_Rect *dstRect)
+{
+	if (SDL_BlitSurface(src, srcRect, dst, dstRect) == 0)
+		return 0;
+
+	reportBlitFail("blit", src, dst);
+
+	SDL_Surface *tmp = toARGB32(src);
+
+	if (!tmp)
+		return -1;
+
+	int r = SDL_BlitSurface(tmp, srcRect, dst, dstRect);
+
+	SDL_FreeSurface(tmp);
+
+	return r;
+}
+
+static int safeBlitScaled(SDL_Surface *src, const SDL_Rect *srcRect, SDL_Surface *dst, SDL_Rect *dstRect)
+{
+	SDL_Rect dstCopy;
+
+	if (dstRect)
+		dstCopy = *dstRect;
+
+	if (SDL_BlitScaled(src, srcRect, dst, dstRect) == 0)
+		return 0;
+
+	reportBlitFail("blitScaled", src, dst);
+
+	SDL_Rect sr = {0, 0, src->w, src->h};
+	SDL_Rect dr = {0, 0, dst->w, dst->h};
+
+	if (srcRect)
+		sr = *srcRect;
+
+	if (dstRect)
+		dr = dstCopy;
+
+	if ((sr.w <= 0) || (sr.h <= 0) || (dr.w <= 0) || (dr.h <= 0))
+		return 0;
+
+	if ((sr.x < 0) || (sr.y < 0) || (sr.x + sr.w > src->w) || (sr.y + sr.h > src->h))
+		return -1;
+
+	SDL_Surface *s32 = toARGB32(src);
+
+	if (!s32)
+		return -1;
+
+	SDL_Surface *tmp = SDL_CreateRGBSurfaceWithFormat(0, dr.w, dr.h, 32, SDL_PIXELFORMAT_ARGB8888);
+
+	if (!tmp)
+	{
+		SDL_FreeSurface(s32);
+		return -1;
+	}
+
+	// Escalado por vecino mas cercano
+	for (int y = 0 ; y < dr.h ; y++)
+	{
+		const Uint32 *srow = (const Uint32*)((const Uint8*)s32->pixels + (sr.y + (y * sr.h) / dr.h) * s32->pitch);
+		Uint32 *drow = (Uint32*)((Uint8*)tmp->pixels + y * tmp->pitch);
+
+		for (int x = 0 ; x < dr.w ; x++)
+		{
+			drow[x] = srow[sr.x + (x * sr.w) / dr.w];
+		}
+	}
+
+	// Copiar colorkey / blend mode / alpha
+	Uint32 key;
+	if (SDL_GetColorKey(s32, &key) == 0)
+		SDL_SetColorKey(tmp, SDL_TRUE, key);
+
+	SDL_BlendMode mode;
+	if (SDL_GetSurfaceBlendMode(s32, &mode) == 0)
+		SDL_SetSurfaceBlendMode(tmp, mode);
+
+	Uint8 alpha;
+	if (SDL_GetSurfaceAlphaMod(s32, &alpha) == 0)
+		SDL_SetSurfaceAlphaMod(tmp, alpha);
+
+	SDL_Rect out = dr;
+	int r = SDL_BlitSurface(tmp, NULL, dst, &out);
+
+	SDL_FreeSurface(tmp);
+	SDL_FreeSurface(s32);
+
+	return r;
+}
+
+// Copias de las fuentes a tamano renderScale veces mayor, para texto nitido sobre la pantalla
+static TTF_Font *hiFont[5] = {NULL, NULL, NULL, NULL, NULL};
+
 Graphics::Graphics()
 {
 	for (int i = 0 ; i < MAX_TILES ; i++)
@@ -37,6 +165,7 @@ Graphics::Graphics()
 	infoMessage = NULL;
 
 	fontSize = 0;
+	renderScale = 1;
 	
 	medalMessageTimer = 0;
 	medalType = 0;
@@ -96,6 +225,12 @@ void Graphics::destroy()
 		{
 			TTF_CloseFont(font[i]);
 		}
+
+		if (hiFont[i])
+		{
+			TTF_CloseFont(hiFont[i]);
+			hiFont[i] = NULL;
+		}
 	}
 	
 	if (medalMessage != NULL)
@@ -126,6 +261,34 @@ void Graphics::destroy()
 void Graphics::registerEngine(Engine *engine)
 {
 	this->engine = engine;
+}
+
+/*
+	The game works in logical units (what the maps, entities and menus use).
+	When renderScale > 1 the screen surface is renderScale times bigger and
+	blit(), blitScaled() and drawRect() multiply positions and sizes when they
+	draw onto the screen. Other surfaces are never scaled.
+	This only changes the scale; the screen surface itself is resized by setGameScreenSize().
+*/
+void Graphics::setRenderScale(int scale)
+{
+	if (scale < 1)
+		scale = 1;
+
+	if (scale > 4)
+		scale = 4;
+
+	renderScale = scale;
+}
+
+int Graphics::logicalW() const
+{
+	return screen->w / renderScale;
+}
+
+int Graphics::logicalH() const
+{
+	return screen->h / renderScale;
 }
 
 void Graphics::mapColors()
@@ -182,13 +345,13 @@ void Graphics::updateScreen()
 			padding = 18;
 		}
 		
-		drawRect(screen->w - (medalMessage->w + 5 + padding), 5, medalMessage->w + padding - 2, 20, grey, screen);
-		drawRect(screen->w - (medalMessage->w + 5 + padding - 1), 6, medalMessage->w + padding - 4, 18, black, screen);
-		blit(medalMessage, screen->w - (medalMessage->w + 5), 7, screen, false);
+		drawRect(logicalW() - (medalMessage->w + 5 + padding), 5, medalMessage->w + padding - 2, 20, grey, screen);
+		drawRect(logicalW() - (medalMessage->w + 5 + padding - 1), 6, medalMessage->w + padding - 4, 18, black, screen);
+		blit(medalMessage, logicalW() - (medalMessage->w + 5), 7, screen, false);
 		
 		if (medalType >= 0)
 		{
-			blit(medal[medalType], screen->w - (medalMessage->w + 5 + 16), 7, screen, false);
+			blit(medal[medalType], logicalW() - (medalMessage->w + 5 + 16), 7, screen, false);
 		}
 	}
 	
@@ -353,6 +516,7 @@ void Graphics::HSVtoRGB(float *r, float *g, float *b, float h, float s, float v)
 SDL_Surface *Graphics::loadImage(const char *filename, bool srcalpha)
 {
 	SDL_Surface *image, *newImage;
+	bool hasAlpha;
 
 	#if USEPAK
 	fprintf(stderr, "DEBUG loadImage: filename=[%s]\n", filename ? filename : "(null)");
@@ -367,6 +531,8 @@ SDL_Surface *Graphics::loadImage(const char *filename, bool srcalpha)
 	if (!image)
 		return showErrorAndExit(ERR_FILE, filename), image;
 
+	hasAlpha = (image->format->Amask != 0);
+
 	newImage = SDL_ConvertSurface(image, screen->format, 0);
 
 	if (newImage)
@@ -379,7 +545,7 @@ SDL_Surface *Graphics::loadImage(const char *filename, bool srcalpha)
 		newImage = image;
 	}
 
-	if(srcalpha)
+	if (srcalpha || hasAlpha)
 		SDL_SetAlpha(newImage, 255);
 	else
 		setTransparent(newImage);
@@ -390,6 +556,7 @@ SDL_Surface *Graphics::loadImage(const char *filename, bool srcalpha)
 SDL_Surface *Graphics::loadImage(const char *filename, int hue, int sat, int value)
 {
 	SDL_Surface *image, *newImage;
+	bool hasAlpha;
 
 	#if USEPAK
 		if (!engine->unpack(filename, PAK_IMG))
@@ -401,6 +568,8 @@ SDL_Surface *Graphics::loadImage(const char *filename, int hue, int sat, int val
 
 	if (!image)
 		return showErrorAndExit(ERR_FILE, filename), image;
+
+	hasAlpha = (image->format->Amask != 0);
 
 	if ((hue != 0) || (sat != 0) || (value != 0))
 	{
@@ -452,9 +621,106 @@ SDL_Surface *Graphics::loadImage(const char *filename, int hue, int sat, int val
 		newImage = image;
 	}
 
-	setTransparent(newImage);
+	if (hasAlpha)
+		SDL_SetAlpha(newImage, 255);
+	else
+		setTransparent(newImage);
 
 	return newImage;
+}
+
+/*
+	Tamaño lógico de una superficie: el tamaño con el que el juego la trata
+	(dibujo, centrado, recorte). Para las imágenes normales coincide con w/h.
+	Para una variante 2x es el tamaño de la imagen original.
+	Se guarda en SDL_Surface::userdata (campo reservado a la aplicación),
+	codificado como (w << 16) | h. 0 significa "sin tamaño lógico propio".
+*/
+void Graphics::setLogicalSize(SDL_Surface *surface, int w, int h)
+{
+	if (!surface)
+		return;
+
+	if ((w == surface->w) && (h == surface->h))
+	{
+		surface->userdata = NULL;
+		return;
+	}
+
+	surface->userdata = (void*)(((intptr_t)w << 16) | (intptr_t)h);
+}
+
+int Graphics::getLogicalWidth(const SDL_Surface *surface) const
+{
+	if (!surface)
+		return 0;
+
+	intptr_t v = (intptr_t)surface->userdata;
+
+	return v ? (int)((v >> 16) & 0xffff) : surface->w;
+}
+
+int Graphics::getLogicalHeight(const SDL_Surface *surface) const
+{
+	if (!surface)
+		return 0;
+
+	intptr_t v = (intptr_t)surface->userdata;
+
+	return v ? (int)(v & 0xffff) : surface->h;
+}
+
+/*
+	Carga un frame de sprite. Busca la variante 2x en gfx/sprites/2x/<mismo nombre>;
+	la usa solo si mide exactamente el doble que el original. Si no existe o las
+	medidas no coinciden, devuelve el original.
+*/
+SDL_Surface *Graphics::loadSpriteImage(const char *filename, int hue, int sat, int value)
+{
+	SDL_Surface *image = loadImage(filename, hue, sat, value);
+
+	if (!image)
+		return image;
+
+	const char *base = strrchr(filename, '/');
+	base = base ? (base + 1) : filename;
+
+	char path2x[255];
+	snprintf(path2x, sizeof path2x, "gfx/sprites/2x/%s", base);
+
+	#if USEPAK
+
+	if (!engine->getPak()->fileExists(path2x))
+		return image;
+
+	#else
+
+	FILE *fp = fopen(path2x, "rb");
+
+	if (!fp)
+		return image;
+
+	fclose(fp);
+
+	#endif
+
+	SDL_Surface *image2x = loadImage(path2x, hue, sat, value);
+
+	if (!image2x)
+		return image;
+
+	if ((image2x->w != image->w * 2) || (image2x->h != image->h * 2))
+	{
+		printf("WARNING: '%s' is %dx%d, expected %dx%d. Using the original image.\n", path2x, image2x->w, image2x->h, image->w * 2, image->h * 2);
+		SDL_FreeSurface(image2x);
+		return image;
+	}
+
+	setLogicalSize(image2x, image->w, image->h);
+
+	SDL_FreeSurface(image);
+
+	return image2x;
 }
 
 SDL_Surface *Graphics::quickSprite(const char *name, SDL_Surface *image)
@@ -467,10 +733,10 @@ SDL_Surface *Graphics::quickSprite(const char *name, SDL_Surface *image)
 
 void Graphics::fade(int amount)
 {
-	if ((fadeBlack->w != screen->w) || (fadeBlack->h != screen->h))
+	if ((fadeBlack->w != logicalW()) || (fadeBlack->h != logicalH()))
 	{
 		SDL_FreeSurface(fadeBlack);
-		fadeBlack = alphaRect(screen->w, screen->h, 0x00, 0x00, 0x00);
+		fadeBlack = alphaRect(logicalW(), logicalH(), 0x00, 0x00, 0x00);
 	}
 
 	SDL_SetAlpha(fadeBlack, amount);
@@ -481,10 +747,10 @@ void Graphics::fadeToBlack()
 {
 	int start = 0;
 
-	if ((fadeBlack->w != screen->w) || (fadeBlack->h != screen->h))
+	if ((fadeBlack->w != logicalW()) || (fadeBlack->h != logicalH()))
 	{
 		SDL_FreeSurface(fadeBlack);
-		fadeBlack = alphaRect(screen->w, screen->h, 0x00, 0x00, 0x00);
+		fadeBlack = alphaRect(logicalW(), logicalH(), 0x00, 0x00, 0x00);
 	}
 
 	while (start < 50)
@@ -535,10 +801,15 @@ void Graphics::loadMapTiles(const char *baseDir)
 
 		if (found)
 		{
-			tile[i] = loadImage(filename);
+			SDL_Surface *loadedTile = loadImage(filename);
 
-			if (!tile[i])
+			if (!loadedTile)
 				abort();
+
+			if (tile[i])
+				SDL_FreeSurface(tile[i]);
+
+			tile[i] = loadedTile;
 
 			if (autoAlpha)
 			{
@@ -547,19 +818,15 @@ void Graphics::loadMapTiles(const char *baseDir)
 					SDL_SetAlpha(tile[i], 130);
 				}
 			}
-			else
-			{
-				if (i < MAP_DECORATION)
-				{
-					SDL_SetColorKey(tile[i], 0, SDL_MapRGB(tile[i]->format, 0, 0, 0));
-				}
-			}
 		}
 	}
 }
 
 void Graphics::loadFont(int i, const char *filename, int pointSize)
 {
+	char tempPath[PATH_MAX];
+	tempPath[0] = 0;
+
 	debug(("Attempting to load font %s with point size of %d...\n", filename, pointSize));
 	
 	if (font[i])
@@ -570,7 +837,6 @@ void Graphics::loadFont(int i, const char *filename, int pointSize)
 	
 	#if USEPAK
 		(void)filename;
-		char tempPath[PATH_MAX];
 		snprintf(tempPath, sizeof tempPath, "%sfont.ttf", engine->userHomeDirectory);
 		font[i] = TTF_OpenFont(tempPath, pointSize);
 	#else
@@ -583,6 +849,30 @@ void Graphics::loadFont(int i, const char *filename, int pointSize)
 	}
 	
 	TTF_SetFontStyle(font[i], TTF_STYLE_NORMAL);
+
+	// Version de alta resolucion de la misma fuente (solo si la pantalla esta escalada)
+	if ((i >= 0) && (i < 5))
+	{
+		if (hiFont[i])
+		{
+			TTF_CloseFont(hiFont[i]);
+			hiFont[i] = NULL;
+		}
+
+		if (renderScale > 1)
+		{
+			#if USEPAK
+				hiFont[i] = TTF_OpenFont(tempPath, pointSize * renderScale);
+			#else
+				hiFont[i] = TTF_OpenFont(filename, pointSize * renderScale);
+			#endif
+
+			if (hiFont[i])
+				TTF_SetFontStyle(hiFont[i], TTF_STYLE_NORMAL);
+			else
+				printf("WARNING: no se pudo abrir la fuente %d a %dpt, se usara la normal\n", i, pointSize * renderScale);
+		}
+	}
 }
 
 Sprite *Graphics::addSprite(const char *name)
@@ -771,10 +1061,21 @@ void Graphics::blit(SDL_Surface *image, int x, int y, SDL_Surface *dest, bool ce
 	int destW = dest ? dest->w : 1280;
 	int destH = dest ? dest->h : 720;
 
-	if ((x < -image->w) || (x > destW + image->w))
+	// Only the screen is scaled. x and y are logical units.
+	int s = (dest == screen) ? renderScale : 1;
+
+	// Size on the destination: the logical size (equals image->w/h except
+	// for 2x variants) times the scale
+	int imgW = getLogicalWidth(image) * s;
+	int imgH = getLogicalHeight(image) * s;
+
+	x *= s;
+	y *= s;
+
+	if ((x < -imgW) || (x > destW + imgW))
 		return;
 
-	if ((y < -image->h) || (y > destH + image->h))
+	if ((y < -imgH) || (y > destH + imgH))
 		return;
 
 	// Set up a rectangle to draw to
@@ -782,16 +1083,36 @@ void Graphics::blit(SDL_Surface *image, int x, int y, SDL_Surface *dest, bool ce
 	gRect.y = y;
 	if (centered)
 	{
-		gRect.x -= (image->w / 2);
-		gRect.y -= (image->h / 2);
+		gRect.x -= (imgW / 2);
+		gRect.y -= (imgH / 2);
 	}
 
-	gRect.w = image->w;
-	gRect.h = image->h;
+	gRect.w = imgW;
+	gRect.h = imgH;
 
 	/* Blit onto the screen surface */
-	if (SDL_BlitSurface(image, NULL, dest, &gRect) < 0)
+	if ((imgW != image->w) || (imgH != image->h))
+	{
+		if (safeBlitScaled(image, NULL, dest, &gRect) < 0)
+			showErrorAndExit("graphics::blit() - %s", SDL_GetError());
+	}
+	else if (safeBlit(image, NULL, dest, &gRect) < 0)
 		showErrorAndExit("graphics::blit() - %s", SDL_GetError());
+}
+
+void Graphics::blitScaled(SDL_Surface *image, int x, int y, int w, int h, SDL_Surface *dest)
+{
+	if (!image)
+	{
+		return showErrorAndExit("graphics::blitScaled() - NULL pointer", SDL_GetError());
+	}
+
+	int s = (dest == screen) ? renderScale : 1;
+
+	SDL_Rect destRect = {x * s, y * s, w * s, h * s};
+
+	if (safeBlitScaled(image, NULL, dest, &destRect) < 0)
+		showErrorAndExit("graphics::blitScaled() - %s", SDL_GetError());
 }
 
 void Graphics::drawBackground()
@@ -802,7 +1123,7 @@ void Graphics::drawBackground()
 		if ((background->w == screen->w) && (background->h == screen->h))
 			blit(background, 0, 0, screen, false);
 		else
-			SDL_BlitScaled(background, NULL, screen, NULL);
+			safeBlitScaled(background, NULL, screen, NULL);
 	}
 	else
 		SDL_FillRect(screen, NULL, black);
@@ -812,19 +1133,33 @@ void Graphics::drawBackground(SDL_Rect *r)
 {
 	if (r->x < 0) r->x = 0;
 	if (r->y < 0) r->y = 0;
-	if (r->x + r->w > screen->w) r->w = screen->w - r->x;
-	if (r->y + r->h > screen->h) r->h = screen->h - r->y;
+	if (r->x + r->w > logicalW()) r->w = logicalW() - r->x;
+	if (r->y + r->h > logicalH()) r->h = logicalH() - r->y;
 
-	if (SDL_BlitSurface(background, r, screen, r) < 0)
+	if (renderScale == 1)
+	{
+		if (safeBlit(background, r, screen, r) < 0)
+			showErrorAndExit("graphics::blit() - %s", SDL_GetError());
+
+		return;
+	}
+
+	// r is in logical units: the source is read from the (logical size) background
+	// and the destination on the screen is renderScale times bigger
+	SDL_Rect dest = {r->x * renderScale, r->y * renderScale, r->w * renderScale, r->h * renderScale};
+
+	if (safeBlitScaled(background, r, screen, &dest) < 0)
 		showErrorAndExit("graphics::blit() - %s", SDL_GetError());
 }
 
 void Graphics::drawRect(int x, int y, int w, int h, int color, SDL_Surface *dest)
 {
-	gRect.x = x;
-	gRect.y = y;
-	gRect.w = w;
-	gRect.h = h;
+	int s = (dest == screen) ? renderScale : 1;
+
+	gRect.x = x * s;
+	gRect.y = y * s;
+	gRect.w = w * s;
+	gRect.h = h * s;
 
 	SDL_FillRect(dest, &gRect, color);
 }
@@ -852,6 +1187,26 @@ void Graphics::setFontSize(int size)
 	Math::limitInt(&fontSize, 0, 4);
 }
 
+/*
+	SDL_ttf devuelve superficies de 8 bits con paleta. SDL no puede escalarlas
+	(SDL_BlitScaled) hacia la pantalla de 32 bits, asi que se convierten una vez
+	al crearlas. Conserva el colorkey y el tamano.
+*/
+static SDL_Surface *textToARGB32(SDL_Surface *text)
+{
+	if ((!text) || (text->format->format == SDL_PIXELFORMAT_ARGB8888))
+		return text;
+
+	SDL_Surface *converted = SDL_ConvertSurfaceFormat(text, SDL_PIXELFORMAT_ARGB8888, 0);
+
+	if (!converted)
+		return text;
+
+	SDL_FreeSurface(text);
+
+	return converted;
+}
+
 SDL_Surface *Graphics::getString(const char *in, bool transparent)
 {
 	fprintf(stderr, "DEBUG getString: fontSize=%d in=[%s]\n", fontSize, in ? in : "(null)");
@@ -871,12 +1226,44 @@ SDL_Surface *Graphics::getString(const char *in, bool transparent)
 	if (transparent)
 		setTransparent(text);
 
+	text = textToARGB32(text);
+
 	return text;
 }
 
 void Graphics::drawString(const char *in, int x, int y, int alignment, SDL_Surface *dest)
 {
 	bool center = false;
+
+	// Sobre la pantalla escalada: renderizar con la fuente grande y dibujar sin escalar
+	if ((dest == screen) && (renderScale > 1) && (hiFont[fontSize] != NULL))
+	{
+		SDL_Surface *hi = TTF_RenderUTF8_Shaded(hiFont[fontSize], (in && in[0]) ? in : " ", fontForeground, fontBackground);
+
+		if (hi)
+		{
+			setTransparent(hi);
+			hi = textToARGB32(hi);
+
+			SDL_Rect r;
+			r.x = x * renderScale;
+			r.y = y * renderScale;
+			r.w = hi->w;
+			r.h = hi->h;
+
+			if (alignment == TXT_RIGHT)
+				r.x -= hi->w;
+			else if (alignment == TXT_CENTERED)
+			{
+				r.x -= hi->w / 2;
+				r.y -= hi->h / 2;
+			}
+
+			safeBlit(hi, NULL, dest, &r);
+			SDL_FreeSurface(hi);
+			return;
+		}
+	}
 
 	SDL_Surface *text = TTF_RenderUTF8_Shaded(font[fontSize], (in && in[0]) ? in : " ", fontForeground, fontBackground);
 
@@ -887,6 +1274,7 @@ void Graphics::drawString(const char *in, int x, int y, int alignment, SDL_Surfa
 		return;
 
 	setTransparent(text);
+	text = textToARGB32(text);
 
 	if (alignment == TXT_RIGHT) x -= text->w;
 	if (alignment == TXT_CENTERED) center = true;
@@ -908,7 +1296,19 @@ void Graphics::drawString(const char *in, int x, int y, int alignment, SDL_Surfa
 
 		cache.text = strdup(in);
 
-		cache.surface = TTF_RenderUTF8_Shaded(font[fontSize], (in && in[0]) ? in : " ", fontForeground, fontBackground);
+		cache.surface = NULL;
+
+		if ((dest == screen) && (renderScale > 1) && (hiFont[fontSize] != NULL))
+		{
+			cache.surface = TTF_RenderUTF8_Shaded(hiFont[fontSize], (in && in[0]) ? in : " ", fontForeground, fontBackground);
+
+			// Se marca como alta resolucion con su tamano logico (userdata != NULL)
+			if (cache.surface)
+				setLogicalSize(cache.surface, (cache.surface->w + renderScale - 1) / renderScale, (cache.surface->h + renderScale - 1) / renderScale);
+		}
+
+		if (!cache.surface)
+			cache.surface = TTF_RenderUTF8_Shaded(font[fontSize], (in && in[0]) ? in : " ", fontForeground, fontBackground);
 
 		if (!cache.surface)
 			cache.surface = TTF_RenderUTF8_Shaded(font[fontSize], "FONT_ERROR", fontForeground, fontBackground);
@@ -916,7 +1316,35 @@ void Graphics::drawString(const char *in, int x, int y, int alignment, SDL_Surfa
 		if(!cache.surface)
 			return;
 
+		int lw = getLogicalWidth(cache.surface);
+		int lh = getLogicalHeight(cache.surface);
+		bool hi = (cache.surface->userdata != NULL);
+
 		setTransparent(cache.surface);
+		cache.surface = textToARGB32(cache.surface);
+
+		if (hi)
+			setLogicalSize(cache.surface, lw, lh);
+	}
+
+	if ((cache.surface->userdata != NULL) && (dest == screen))
+	{
+		SDL_Rect r;
+		r.x = x * renderScale;
+		r.y = y * renderScale;
+		r.w = cache.surface->w;
+		r.h = cache.surface->h;
+
+		if (alignment == TXT_RIGHT)
+			r.x -= cache.surface->w;
+		else if (alignment == TXT_CENTERED)
+		{
+			r.x -= cache.surface->w / 2;
+			r.y -= cache.surface->h / 2;
+		}
+
+		safeBlit(cache.surface, NULL, dest, &r);
+		return;
 	}
 
 	if (alignment == TXT_RIGHT) x -= cache.surface->w;
@@ -1240,8 +1668,12 @@ void Graphics::showRootWarning()
 */
 extern Graphics graphics;
 
-void setGameScreenSize(int w, int h)
+void setGameScreenSize(int logicalW, int logicalH)
 {
+	// The surface is renderScale times bigger than the logical size
+	int w = logicalW * graphics.renderScale;
+	int h = logicalH * graphics.renderScale;
+
 	if ((graphics.screen->w == w) && (graphics.screen->h == h))
 		return;
 

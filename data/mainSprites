@@ -142,6 +142,7 @@ SpiderBlob4Spin 	-95 0 0 gfx/sprites/spiderBlobRight1.png 5 gfx/sprites/spiderBl
 PlasmaBolt			0 0 0 gfx/sprites/plasmaBolt1.png 6 gfx/sprites/plasmaBolt2.png 6 gfx/sprites/plasmaBolt3.png 6 gfx/sprites/plasmaBolt4.png 6 @none@ 0
 LaserBolt			0 0 0 gfx/sprites/laserBolt1.png 60 @none@ 0
 AlienLaserBolt		135 0 0 gfx/sprites/laserBolt1.png 60 @none@ 0
+DroidLaserBolt		120 0 0 gfx/sprites/laserBolt1.png 60 @none@ 0
 FlameThrower		0 0 0 gfx/sprites/bubble.png 60 @none@ 0
 Bomb					0 0 0 gfx/sprites/bomb.png 60 @none@ 0
 

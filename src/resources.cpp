@@ -50,7 +50,7 @@ void loadSprite(const char *token)
 		if (strcmp(filename[i], "@none@") == 0)
 			break;
 
-		sprite->setFrame(i, graphics.loadImage(filename[i], hue, sat, val), frameTime[i]);
+		sprite->setFrame(i, graphics.loadSpriteImage(filename[i], hue, sat, val), frameTime[i]);
 
 		i++;
 		
@@ -73,7 +73,7 @@ void loadResources()
 	graphics.quickSprite("optionsBackground", graphics.loadImage("gfx/main/optionsBackground.png"));
 
 	SDL_FillRect(graphics.screen, NULL, graphics.black);
-	graphics.drawString(_("Loading..."), 320 + ((graphics.screen->w - 640) / 2), 440 + ((graphics.screen->h - 480) / 2), TXT_CENTERED, graphics.screen);
+	graphics.drawString(_("Loading..."), 320 + ((graphics.logicalW() - 640) / 2), 440 + ((graphics.logicalH() - 480) / 2), TXT_CENTERED, graphics.screen);
 	graphics.showLoading(0, 0);
 	graphics.updateScreen();
 	

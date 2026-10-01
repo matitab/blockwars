@@ -62,8 +62,8 @@ void doStatusBar()
 	char string[1024];
 
 	// The mission view is bigger than 640x480: anchor to the real surface size
-	const int cx = graphics.screen->w / 2;
-	const int barY = graphics.screen->h - 25;	// bottom message / boss bar
+	const int cx = graphics.logicalW() / 2;
+	const int barY = graphics.logicalH() - 25;	// bottom message / boss bar
 
 	graphics.blit(graphics.infoBar, 0, 0, graphics.screen, false);
 
@@ -174,7 +174,7 @@ void doStatusBar()
 
 	static Graphics::SurfaceCache weaponCache;
 	snprintf(string, sizeof string, "%s %s", _("Weapon:"), _(player.currentWeapon->name));
-	graphics.drawString(string, graphics.screen->w - 10, 5, TXT_RIGHT, graphics.screen, weaponCache);
+	graphics.drawString(string, graphics.logicalW() - 10, 5, TXT_RIGHT, graphics.screen, weaponCache);
 	
 	if (game.skill == 3)
 	{
@@ -205,7 +205,7 @@ void doStatusBar()
 			static Graphics::SurfaceCache cache;
 			graphics.setFontColor(0xff, 0x00, 0x00, 0x00, 0x00, 0x00);
 			graphics.setFontSize(3);
-			graphics.drawString(_("Mission Failed! Time Up!"), cx, (graphics.screen->h / 2) - 20, TXT_CENTERED, graphics.screen, cache);
+			graphics.drawString(_("Mission Failed! Time Up!"), cx, (graphics.logicalH() / 2) - 20, TXT_CENTERED, graphics.screen, cache);
 			graphics.setFontSize(0);
 			game.canContinue = 0;
 		}
@@ -217,8 +217,8 @@ void doPauseInfo()
 	int col1, col2, y;
 
 	// Layout designed for 640x480: centre it on the real surface
-	const int cx = graphics.screen->w / 2;
-	int dy = (graphics.screen->h - 480) / 2;
+	const int cx = graphics.logicalW() / 2;
+	int dy = (graphics.logicalH() - 480) / 2;
 	if (dy < 0)
 		dy = 0;
 
@@ -455,5 +455,5 @@ void doMusicInfo(unsigned int ticks)
 		return;
 
 	SDL_SetAlpha(panel, 255 * alpha);
-	graphics.blit(panel, graphics.screen->w - 20 - panel->w, graphics.screen->h - 60 - panel->h, graphics.screen, false);
+	graphics.blit(panel, graphics.logicalW() - 20 - panel->w, graphics.logicalH() - 60 - panel->h, graphics.screen, false);
 }

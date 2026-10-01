@@ -299,9 +299,18 @@ enum {
 #define BRICKSIZE  	32
 #define BRICKSHIFT	5
 
+// World logic stays in BRICKSIZE units. Render scale is only for on-screen display.
+// Leave it at 1 until a proper scaled blit path is added; otherwise world and screen coordinates drift.
+#define RENDER_SCALE	1
+
+// Ratio between the screen surface and the logical view (1 = off, 2 = sprites in "2x" resolution).
+// graphics.logicalW() / logicalH() give the logical size; positions passed to graphics.blit() and
+// graphics.drawRect() are always logical.
+#define HIRES_SCALE		2
+
 // Camera centre follows the real surface size (the game view can differ from the 1280x720 menus)
-#define OFFSETX (graphics.screen->w / 2)
-#define OFFSETY (graphics.screen->h / 2)
+#define OFFSETX (graphics.logicalW() / 2)
+#define OFFSETY (graphics.logicalH() / 2)
 
 // Menus and overlays are laid out for 1280x720, the in-mission view is larger
 #define UI_VIEW_W	1280
@@ -310,10 +319,10 @@ enum {
 #define GAME_VIEW_H	600
 
 // "Process" and "draw" margins around the view (used to be 800x600 and 700x500)
-#define ACTIVE_W (graphics.screen->w + 160)
-#define ACTIVE_H (graphics.screen->h + 120)
-#define DRAW_W   (graphics.screen->w + 60)
-#define DRAW_H   (graphics.screen->h + 20)
+#define ACTIVE_W (graphics.logicalW() + 160)
+#define ACTIVE_H (graphics.logicalH() + 120)
+#define DRAW_W   (graphics.logicalW() + 60)
+#define DRAW_H   (graphics.logicalH() + 20)
 
 #define MAP_AIR 		0
 #define MAP_WATER 		1
@@ -359,7 +368,7 @@ enum {
 
 /* ########### pak file stuff ######## */
 
-#define PAK_MAX_FILENAME	60
+#define PAK_MAX_FILENAME	128
 
 #ifndef USEPAK
 	#define USEPAK 1

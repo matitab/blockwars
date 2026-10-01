@@ -9,6 +9,20 @@ Documento vivo: cada archivo que vamos viendo se anota acá con su función, qu�
 
 **Última actualización:** 2026-09-30
 
+## Hoja de ruta: texturas de mayor resolución
+
+Objetivo: permitir assets visuales de mayor resolución sin cambiar el tamaño lógico del mapa ni sus colisiones. `BRICKSIZE` debe seguir en 32; la resolución de una textura y el tamaño que ocupa en el mundo son conceptos distintos.
+
+| Paso | Objetivo | Estado |
+|---|---|---|
+| 1. Separar mundo y render | Mantener la lógica del mundo en unidades de 32 y reservar una escala visual independiente. | Parcial: `BRICKSIZE` sigue en 32 y `RENDER_SCALE` está definido en 1, pero esa escala no está conectada a una transformación completa de render. |
+| 2. Definir espacios lógico y visual | Mantener coordenadas de mundo para mapa, hitboxes, colisiones y pathfinding; convertirlas a pantalla únicamente al dibujar. | Pendiente: el mapa todavía calcula posiciones de pantalla directamente a partir del tile y el offset de cámara; no hay una conversión general mundo-pantalla. |
+| 3. No tocar la lógica de colisión | No cambiar `BRICKSIZE`, colisiones, hitboxes, cámara lógica ni pathfinding para aumentar la resolución de los assets. | Restricción respetada hasta ahora. El usuario confirmó que, tras revertir la prueba de escala, todas las tiles vuelven a verse. No se afirma una prueba de runtime independiente de colisiones o cámara. |
+| 4. Dibujar texturas grandes en tiles lógicos | Cargar una fuente de mayor resolución y dibujarla dentro del destino visual correspondiente al tile lógico de 32x32, sin mover su posición en el mundo. | Preparado para todas las capas del mapa: `drawMapTile()` dibuja en 32x32 cualquier superficie de tile de al menos 64x64 y deja intactas las de menor tamaño. El usuario confirmó que reemplazó los tiles de Grasslands por variantes 64x64; pendiente de compilar y verificar el resultado con el tileset completo. |
+| 5. Añadir escala visual separada | Aplicar `renderScale` solo a la transformación de dibujo, manteniendo la escala lógica en 1. Coordinar tiles, entidades y cámara; no escalar solo una capa. | Pendiente. La prueba previa de 2x en el mapa se revirtió porque los blits no respetaban el tamaño de destino y desalineaban el dibujo. |
+
+**Orden de trabajo:** compilar y revisar en juego el tileset completo de Grasslands; después extender el mismo tratamiento a otros tilesets o sprites si corresponde. No volver a activar una escala 2x parcial en `map.cpp`.
+
 **Ubicación de los fuentes:** `C:\Users\Usuario\Desktop\Proyectos\blockwars\src`
 
 ---
@@ -52,7 +66,7 @@ Documento vivo: cada archivo que vamos viendo se anota acá con su función, qu�
 | `CEntity.cpp` | Visto | Clase `Entity`: valores por defecto, tamaño desde el sprite, animación, gravedad y entorno |
 | `CSprite.h` | Visto | Declaración de `Sprite`: hasta 8 fotogramas con su duración |
 | `CSprite.cpp` | Visto | Clase `Sprite`: fotogramas, animación y liberación |
-| `items.cpp` | Visto | Ítems: soltar, recoger, cargar `defItems` |
+| `items.cpp` | Visto, **modificado** | Ítems: soltar, recoger, cargar `defItems` |
 | `resources.cpp` | Visto | Carga de recursos de la misión: sprites, sonidos, armas, enemigos, ítems y mapa |
 | `objectives.cpp` | Visto | Objetivos de misión, MIAs y avisos de progreso |
 | `player.cpp` | Visto, **modificado** | Bob: movimiento, puntería, disparo, munición, puntaje, medallas |
@@ -97,11 +111,11 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 | `data/gameOverWidgets` | `gameover` | Visto |
 | `data/weapons` | `loadDefWeapons` | Visto |
 | `data/defEnemies` | `loadDefEnemies` | Visto |
-| `data/defItems` | `loadDefItems` (`items.cpp`) | Visto |
+| `data/defItems` | `loadDefItems` (`items.cpp`) | Visto, **modificado** |
 | `data/defines.h` | `Engine::loadDefines` | Visto |
 | `data/license` | `checkForLicense` | Visto |
 | `data/vera.ttf` | `initSystem` (fuentes) | Confirmado en `data/` |
-| `data/mainSprites` | `loadResources` (`resources.cpp`); define todos los sprites del juego, incluidos los íconos de ítems y las balas | Visto |
+| `data/mainSprites` | `loadResources` (`resources.cpp`); define todos los sprites del juego, incluidos los íconos de ítems y las balas | Visto, **modificado** |
 
 **Archivos que el juego escribe** (en `engine.userHomeDirectory`): `config` (texto), `keyboard.cfg` y `joystick.cfg` (binarios), y temporales `music.mod` y `font.ttf`. En Unix la carpeta es `~/.parallelrealities/blobwars/`; en Windows no se vio dónde queda.
 
@@ -167,7 +181,7 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 - **Estadísticas:** `bulletsFired` y `bulletsHit` pasaron de 5 a `MAX_WEAPONS` (25) posiciones, para que las armas 21 y 22 no escriban fuera del arreglo (mejora 2, entregada, sin compilar). `currentWeapon` es `unsigned char`. El objeto `Game` crece 160 bytes; si `saveGame` o `loadGame` (no vistos) escriben la estructura o los arreglos con `sizeof`, el formato de las partidas guardadas cambia.
 
 ### `enemies.cpp`
-**Función:** enemigos: definiciones, aparición con rangos y escuadras, IA (alerta, disparo, movimiento), colisión con balas, muerte y dibujo. El adjunto revisado el 2026-09-29 tiene 2094 líneas. Incluye un sistema de IA propio (alerta, rangos, escuadras, ráfagas), no solo la lógica base.
+**Función:** enemigos: definiciones, aparición con rangos y escuadras, IA (alerta, disparo, movimiento), colisión con balas, muerte y dibujo. El adjunto subido el 2026-09-30 tenía 2991 líneas; con los cambios del droide utilitario quedó en 3241 (CRLF). Incluye un sistema de IA propio (alerta, rangos, escuadras, ráfagas), no solo la lógica base.
 
 **Estado por enemigo**
 - `EnemyAIState` en `std::map<Entity*, EnemyAIState>` dentro del `.cpp`: aviso de disparo (`telegraph`), `fireNow`, conciencia (`awareness`), `lostSight`, `alerted`, `canSee`, última posición vista, detección de atasco, `maxHealth`, ráfaga, turno de ataque, `rank`, `squadLeader`, `confused` y `panicDir`.
@@ -192,15 +206,28 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 - Ráfagas: 2 disparos (3 con 50 % si `skill` >= 2, +1 en veteranos), limitadas a `4 / daño`; 1 solo si el arma recarga más de 25 o explota; el arma de dispersión, máximo 2. Separación mínima de 6 fotogramas y 50 de pausa al terminar.
 - `getAimDY`: puntería con anticipación (`skill / 3`) solo con armas rectas sin `dy` propio y enemigos sin `ENT_AIMS`; tope de ±3.
 - Bob no participa: los enemigos disparan con `addBullet(enemy, velocidad, aimDY)`.
+- **Droid Laser (2026-09-30, entregado, sin compilar ni probar):** bloque `DROID LASER` (después de `getBurstSize`). `isDroidLaser` (arma 23), `pickLaserMode`, `ensureDroidLaser`, `getSweepAngle` y `fireDroidLaser`. Estado nuevo en `EnemyAIState`: `clip`, `clipMax`, `laserMode`, `volleyMode`, `volleyTotal`, `volleyIndex` y `sweepDir`. Cargador de 12 (`LASER_CLIP_SIZE`); al vaciarse pone `enemy->reload` en 150 - 20 * `skill` fotogramas (eso bloquea el disparo) y sortea de nuevo el modo. Modo preferido al aparecer y tras cada recarga: barrido 10 + 10 * `skill` %, ráfaga 35 %, el resto disparo único. Ráfaga con `getBurstSize` (2 con daño 2). Barrido de 4 + `skill` balas cada 5 fotogramas con `addEnemyAimedShot`, abanico de ±`atan(55 / distancia)` (4° a 25°) en un sentido al azar, y 12 fotogramas más de aviso. Se engancha en `lookForPlayer` en dos puntos: el aviso (`telegraph`) y justo después de `st.fireNow = false`, donde hace `return` (los droids vuelan, así que no se salta el resto). Sin indicador visual de recarga.
+
+**Droide utilitario (Eye Droid V1.0, 2026-09-30, entregado, sin compilar ni probar)**
+- **Quién es:** el enemigo cuyo nombre coincide con `UTILITY_DROID_NAME` ("Eye Droid V1.0"); `initUtilityDroid` lo marca al aparecer (`addEnemy`). Si se renombra en `data/defEnemies`, pierde escudo y dashes. Estado en `EnemyAIState`: `utilityDroid`, `shield`, `maxShield`, `dashes`, `rechargeTimer`, `stagger`, `staggerImmune`, `dashCooldown`, `dashReact`, `safeMode`.
+- **Escudo cuantizado:** son 5 cargas enteras (`int shield`, `int maxShield`), no una barra continua; cada daño, dash o deflexión gasta puntos enteros.
+- **Escudo:** 5 puntos (`DROID_SHIELD_POINTS`). Absorbe primero el daño de balas (`soakShieldDamage`) y de explosiones (`soakExplosionDamage`, la llama `explosions.cpp`); lo que no absorbe pasa a la salud. Al romperse suelta fragmentos (`addDroidDebris`). Con escudo hay un brillo cian bajo el droide (`drawDroidShield`, más tenue cuanto menos escudo); sin escudo, un golpe directo lo aturde `DROID_STAGGER_FRAMES` (4) y luego no se lo puede aturdir otra vez durante 20.
+- **Recarga (`updateDroidShield`, se llama desde `doAI` tras `updateDroidDash`):** la cuenta regresiva de 10 s (`DROID_RECHARGE_FRAMES` = `MAX_FPS * 10`, 620 fotogramas) arranca cuando el escudo llega a 0 **o** cuando se acaban los dashes. No se recupera nada mientras corre; al terminar, escudo y pool vuelven completos (5 y 3) y sale un estallido de partículas cian. Si ya corría una cuenta, un escudo que se rompe no la reinicia. Solo avanza mientras el droide está dentro del área activa (corre dentro de `doAI`).
+- **Dashes:** pool de 3 (`DROID_MAX_DASHES`). Cambio instantáneo de `x` e `y`, sin animación ni sonido (`performDroidDash`). Cada dash gasta 1 del pool y 1 punto de escudo (`DASH_SHIELD_COST`), así que sin escudo no hay dash; si el dash deja el escudo en 0, se rompe como por daño. Destino: radio de 64 a 160 px, 8 intentos (`DASH_TRIES`), cooldown de 40 fotogramas.
+- **Destino válido (`isDashSpotFree`):** dentro del mapa (margen 16 px), sin tiles sólidos ni líquidos en la caja del droide, no más abajo de `map.limitDown + 500` (el mismo borde con el que `doPlayer` decide que Bob cayó del mapa; solo si `limitDown` > 0) y con algo sólido o líquido debajo hasta el fondo del mapa (`hasSomethingBelow`), para no terminar sobre un vacío.
+- **Cuándo hace dash:** (1) **esquive del disparo:** `notifyPlayerShot(origenX, origenY, dirX, dirY)` la llama `addBullet` (`bullets.cpp`) en el instante en que Bob dispara una bala recta (`ENT_WEIGHTLESS`; las granadas lanzadas no avisan). Un droide en la línea de fuego que ya detectó a Bob (`awareness` en `AWARE_ALERT`, el "!"; si no, no esquiva), a menos de 1000 px, con `hasClearShot` y con dash y escudo listos salta con probabilidad `DASH_DODGE_CHANCE` (100 %) a un punto que quede al menos `DASH_DODGE_CLEARANCE` (40 px) más la mitad de su tamaño fuera de esa línea (gana el más alejado). No mira balas que ya están en el aire. (2) **Cercanía:** con Bob a menos de 110 px, 8 % por fotograma (elige el punto más lejos de Bob). (3) **Al azar:** 4 por mil por fotograma si está alerta y ve a Bob. `DASH_HIT_CHANCE` está en 0: ya no hace dash por recibir un golpe (`dashReact` se sigue activando pero no tiene efecto).
+- **Deflexión gravitatoria de granadas (`deflectGrenadeAtDroids`, costo 2 puntos, `DROID_DEFLECT_COST`):** `doBullets` (`bullets.cpp`) la llama una vez por fotograma por bala, antes de moverla. Si una granada de Bob (`owner == &player` e `id == WP_GRENADES`; cohete y plasma no cuentan) entra en el campo repulsor de un droide con al menos 2 puntos de escudo (radio = mitad de su tamaño + `DROID_DEFLECT_MARGIN` = 40 px) y se está acercando, el droide no recibe daño: la velocidad se refleja respecto a la recta droide-granada (ángulo de espejo, sin perder velocidad), la granada se empuja al borde del campo, cuesta 2 puntos, hay destello cian y sonido `SND_CLANG`; si el escudo queda en 0 se rompe como por daño. Con menos de 2 puntos el campo no actúa y la granada golpea y explota normal. Es pasivo: no exige que el droide haya detectado a Bob. Sirve de "banda de billar" para explotar granadas sobre los enemigos que lo rodean. La espoleta (vida) de la granada sigue corriendo. Sin compilar ni probar.
+- **Código sin uso:** `safeMode` nunca se activa (el campo y la comprobación en `updateDroidDash` quedan de un diseño anterior) y `DROID_RECHARGE_CAP` no se usa. La "penalización por agresividad" que mencionaban los comentarios no existe.
 
 **Movimiento (`doAI`)**
+- **Búsqueda activa (propuesta 10, ya en el código, sin probar):** los que caminan y perdieron de vista a Bob, al llegar a menos de 40 px de su último punto visto barren la zona: puntos a 50-150 px, primero hacia donde iba Bob (`lastDir`) y luego al otro lado, con 40 a 80 fotogramas de espera en cada uno. No aplica a voladores, nadadores, estáticos, jefes ni Galdov. Las reglas de movimiento proponen destino con prioridad (`MoveProposal`, `MOVE_PRIO_*`) y gana la más alta.
 - Los jefes salen sin IA; Galdov llama a `doGaldovAI` y sigue. Detecta atascos: a los 20 fotogramas salta, a los 60 abandona el destino. Sin sospecha, deambula hasta 640 px (o cerca de su líder). Voladores y nadadores mueven `dy` hacia `ty`. Quieto durante aviso y ráfaga.
 
 **Colisión y muerte**
 - `enemyBulletCollisions`: balas de Bob, del mundo o de jefes. Alerta al golpeado, sus vecinos y su escuadra; cuenta aciertos, combos (medalla `25_Hit_Combo`), puntaje y objetivos (`Combo-<arma>`, `Enemy`, nombre). Con `game.gore` sale sangre; si no, partículas de color por tipo (`getNonGoreParticleColor`).
 - `gibEnemy`: `ENT_EXPLODES` explota con radio `10 + 20 * skill`; el resto suelta 25 efectos de sangre con gore o 150 partículas de color sin gore.
 - `doEnemies`: solo actualiza dentro de `ACTIVE_W/H`, dibuja dentro de `DRAW_W/H` (con iconos de alerta, barra de salud y galones). Los `ENT_SPAWNED` a más de 1920 x 1440 px se eliminan. Enemigos en limo o lava mueren. Los muertos pasan por una cuenta regresiva de salud hasta -50 y solo se quitan si `referenced` es falso (con `cheatBlood` no se quitan).
-- **Drops:** cuando la salud llega a -50 (y tiene `value`), `doEnemies` llama a `dropRandomItems` dentro de `ACTIVE_W/H`, en dos ramas (muerte directa y muerto sin referencias). El drop no mira el rango del enemigo.
+- **Drops:** cuando la salud llega a -50 (y tiene `value`), `doEnemies` llama a `dropRandomItemsByRank` (desde 2026-09-30; antes `dropRandomItems`) dentro de `ACTIVE_W/H`, en dos ramas (muerte directa y muerto sin referencias), con el rango que devuelve `getDropRank` (busca en `aiState` con `find`, sin crear estado; 0 si no hay). Los rangos `RANK_SOLDIER` 0, `RANK_VETERAN` 1 y `RANK_SERGEANT` 2 coinciden con los que usa `items.cpp`. El estado del enemigo sigue vivo en ambas ramas porque `forgetEnemy` se llama después del drop. Entregado, sin compilar ni probar.
 - Dibujo: barra de salud solo si hay daño o rango; galones amarillos (veterano) o naranjas dobles (sargento); "?" amarillo y "!" rojo (amarillo parpadeante durante el aviso).
 
 **Carga:** `loadDefEnemies` lee `data/defEnemies` (una línea por enemigo: `"nombre" sprite0 sprite1 sprite2 "arma" salud valor flags`, termina con `@EOF@`). `loadEnemy` hace lo mismo con una línea. `getDefinedEnemy` y `getEnemy` buscan por nombre.
@@ -214,7 +241,7 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 ### `CPak.cpp`
 **Función:** clase `Pak`: abre `blobwars.pak`, lee su índice y descomprime archivos por nombre. Solo actúa si el juego se compila con `USEPAK`.
 
-- **Formato del pak (según el lector):** los últimos 8 bytes son dos `Uint32`: posición del índice (`listPos`) y cantidad de archivos (`numberOfFiles`). En `listPos` hay `numberOfFiles` registros `FileData` escritos como `struct` crudo (`fread` de `sizeof(FileData)`). Cada archivo está comprimido con zlib (`uncompress`) en `location`, con tamaño comprimido `cSize` y descomprimido `fSize`.
+- **Formato del pak (según el lector):** los últimos 8 bytes son dos `Uint32`: posición del índice (`listPos`) y cantidad de archivos (`numberOfFiles`). En `listPos` hay `numberOfFiles` registros `FileData` escritos como `struct` crudo (`fread` de `sizeof(FileData)`). El registro reserva `PAK_MAX_FILENAME` bytes para la ruta (actualmente 128); el empaquetador y el juego deben recompilarse juntos porque ambos serializan y leen el mismo tamaño de estructura. Cada archivo está comprimido con zlib (`uncompress`) en `location`, con tamaño comprimido `cSize` y descomprimido `fSize`.
 - **Nombres:** `unpack(nombre, &buffer)` compara con `strcmp` contra `fd[i].filename`, sin normalizar: la clave debe ser exactamente la ruta que pide el código (`data/optionWidgets`, `data/gameplayWidgets`, `gfx/main/...`, `sound/...`). Si no la encuentra devuelve `false`; el caller decide qué hacer (`loadWidgets` devuelve `false` y `showOptions` cierra con `showErrorAndExit(ERR_FILE, ...)`).
 - **Otras funciones:** `setPakFile` (lee el índice; si falta el pak, `showPakErrorAndExit` termina el programa con `PAKFULLPATH`), `fileExists`, `getUncompressedSize`. El buffer de salida es `fSize + 1` con un 0 al final.
 - **Depuración:** en `unpack` hay tres `fprintf(stderr, "DEBUG ...")` (entradas que contienen `mainSprites`, coincidencia encontrada y resultado de un `fread` previo).
@@ -284,8 +311,8 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 | Aqua Blob | Aimed Pistol | 2 | 50 | `ENT_AIMS+ENT_SWIMS` |
 | Laser Blob | Alien Laser Cannon | 3 | 50 | 0 |
 | Machine Gun Blob | Machine Gun | 3 | 50 | `ENT_RAPIDFIRE` |
-| Eye Droid V1.0 | Aimed Pistol | 4 | 50 | `ENT_AIMS+ENT_FLIES+ENT_EXPLODES` |
-| Eye Droid V2.0 | Machine Gun | 5 | 50 | `ENT_MULTIEXPLODE+ENT_FLIES+ENT_EXPLODES+ENT_RAPIDFIRE` |
+| Eye Droid V1.0 | Droid Laser | 4 | 50 | `ENT_AIMS+ENT_FLIES+ENT_EXPLODES` |
+| Eye Droid V2.0 | Droid Laser | 5 | 50 | `ENT_AIMS+ENT_MULTIEXPLODE+ENT_FLIES+ENT_EXPLODES` (sin `ENT_RAPIDFIRE`) |
 | Eye Droid V3.0 | Alien Grenades | 5 | 50 | `ENT_AIMS+ENT_FLIES+ENT_EXPLODES` |
 | Eye Droid V4.0 | Rocket Launcher | 6 | 50 | `ENT_AIMS+ENT_FLIES+ENT_EXPLODES+ENT_MULTIEXPLODE` |
 | Spider Blob | Aimed Spread Gun | 15 | 50 | `ENT_MULTIEXPLODE+ENT_AIMS+ENT_EXPLODES+ENT_JUMPS` |
@@ -293,17 +320,19 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 | Spider Blob V3.0 | Alien Laser Cannon | 15 | 50 | `ENT_MULTIEXPLODE+ENT_EXPLODES+ENT_JUMPS` |
 | Spider Blob V4.0 | Machine Gun | 15 | 50 | `ENT_MULTIEXPLODE+ENT_EXPLODES+ENT_JUMPS+ENT_RAPIDFIRE` |
 
+- **`Eye Droid V1.0` es el droide utilitario** (escudo y dashes) por su nombre exacto; ver `enemies.cpp`.
 - **Coincidencias con `enemies.cpp`:** `Pistol Blob` y `Machine Gun Blob` (los escoltas del sargento) están definidos, y el archivo termina con `@EOF@`.
 - **Armas:** los seis nombres usados (`Aimed Pistol`, `Alien Grenades`, `Alien Laser Cannon`, `Machine Gun`, `Rocket Launcher`, `Aimed Spread Gun`) existen en `data/weapons`.
 
 ### `data/defItems`
-**Función:** definiciones de ítems (`main.cpp` declara `defItem[]`). Fin de línea LF, 15 entradas (ids 0 a 14), termina con `@EOF@`.
+**Función:** definiciones de ítems (`main.cpp` declara `defItem[]`). Fin de línea LF, ASCII, 17 entradas (ids 0 a 16), termina con `@EOF@`.
 
 **Formato observado:** `id "nombre" sprite número`.
 
 - **Ids 0 a 4:** armas (`Pistol`, `Machine Gun`, `Laser Gun`, `set of Grenades`, `Three Way Spread`), sprites `PistolIcon`, `MachineIcon`, `LaserIcon`, `GrenadeIcon` y `SpreadIcon`, número 1.
 - **Ids 5 a 7:** cerezas (`Cherry`, `pair of Cherries`, `bunch of Cherries`), sprites `Cherry`, `DoubleCherries` y `TripleCherries`, números 1, 2 y 5.
 - **Ids 8 a 14:** puntos (`Points` a `Points7`), sprites `PointsPod` a `PointsPod7`, números 25, 50, 75, 100, 125, 150 y 200.
+- **Ids 15 y 16 (2026-09-30):** `15 "Rocket Launcher" RocketIcon 1` y `16 "Plasma Gun" PlasmaIcon 1`. Dan las armas 21 y 22 de Bob (mapeo en `items.cpp`). Los sprites `RocketIcon` y `PlasmaIcon` están en `mainSprites` (2026-09-30); `loadDefItems` los pide con `getSprite(..., true)`, así que si falta alguno de los dos `.png` en el pak el juego se cierra al cargar. Los nombres (`Rocket Launcher`, `Plasma Gun`) pasan por `checkObjectives`: no deben coincidir con el `target` de un objetivo.
 
 ### `data/license`
 **Función:** texto de la licencia que muestra el juego (`checkForLicense`). Fin de línea LF.
@@ -332,14 +361,15 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 | Arma | id | `idArma` | Daño | Recarga | Quién la usa |
 |---|---|---|---|---|---|
 | Pistol | 0 | 0 | 1 | 15 | Bob |
-| Machine Gun | 1 | 1 | 1 | 4 | Bob y `Machine Gun Blob`, `Eye Droid V2.0`, `Spider Blob V4.0` |
+| Machine Gun | 1 | 1 | 1 | 4 | Bob y `Machine Gun Blob`, `Spider Blob V4.0` |
 | Laser Cannon | 2 | 2 | 1 | 40 | Bob |
 | Grenades | 3 | 3 | 50 | 20 | Bob |
 | Spread Gun | 4 | 4 | 1 | 15 | Bob |
 | Rocket Launcher | 5 | 5 | 75 | 45 | `Eye Droid V4.0` |
-| Aimed Pistol | 11 | 11 | 1 | 5 | `Pistol Blob`, `Aqua Blob`, `Eye Droid V1.0` |
+| Aimed Pistol | 11 | 11 | 1 | 5 | `Pistol Blob`, `Aqua Blob` |
 | Aimed Spread Gun | 12 | 4 | 1 | 15 | `Spider Blob` |
 | Alien Laser Cannon | 17 | 2 | 3 | 15 | `Laser Blob`, `Spider Blob V3.0` |
+| Droid Laser | 23 | 23 | 2 | 12 | `Eye Droid V1.0` y `Eye Droid V2.0` |
 | Alien Grenades | 18 | 18 | 50 | 20 | `Grenade Blob`, `Eye Droid V3.0`, `Spider Blob V2.0` |
 
 - **Otras armas:** Plasma Rifle (6, daño 15), Flame Thrower (7, daño 3), Lava Ball (9 y 10, daño 50), Aimed Machine Gun (19, daño 1), Shells (13, daño 75), Rock (14, daño 25), Stalagtite (15, daño 3), Bomb (16, daño 25) y Mortor Shells (20, daño 50; nombre tal cual figura en el archivo).
@@ -351,17 +381,18 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 - **Granadas (3 y 18), datos del archivo del 2026-09-30:** `Grenades` y `Alien Grenades` tienen `dx 3`, `dy -2`, vida 240, `ENT_BOUNCES+ENT_EXPLODES` y no son `WEIGHTLESS`, así que caen con la gravedad de `doBullets`. Rebotan en paredes y suelo y explotan al acabarse la vida (240 fotogramas, unos 4 s) o al tocar a Bob. Con el disparo original de `ENT_AIMS` (dirección unitaria x `dx`, `dy`) la velocidad es de unos 3,6 como máximo y el alcance en llano ronda los 130 px; por eso las granadas enemigas caían cortas a la distancia preferida de 450 px. `addEnemyGrenade` las reemplaza por un lanzamiento de 5 a 10 de velocidad.
 - **Rebote:** `Laser Cannon` (2) y `Alien Laser Cannon` (17) tienen `ENT_BOUNCES`; `Alien Laser Cannon` comparte `idArma` 2. El campo `salud` es la vida de la bala en fotogramas.
 - **Fin de línea:** LF; 27 líneas (con las armas 21 y 22); el id 8 (`ICEGUN`) no tiene entrada.
-- **Armas de Bob con `dy 0` (nuevas, entregadas, sin probar):** `21 "Player Rocket Launcher"` (`idArma` 5, radio 100 según el archivo subido el 2026-09-30, velocidad 8, recarga 45, vida 240) y `22 "Player Plasma Rifle"` (`idArma` 6, radio 12, velocidad 8, recarga 14, vida 60). Mismos sprites, sonido y flags que las originales. Nada las selecciona todavía: los ítems solo dan las armas 0 a 4. Quedan libres los ids 23 y 24 (`MAX_WEAPONS` es 25). Los nombres deben ser únicos por `getWeaponByName` y por los `Combo-<nombre>` de objetivos; `Lava Ball` (ids 9 y 10) ya está repetido.
+- **Armas de Bob con `dy 0` (nuevas, entregadas, sin probar):** `21 "Player Rocket Launcher"` (`idArma` 5, radio 100 según el archivo subido el 2026-09-30, velocidad 8, recarga 45, vida 240) y `22 "Player Plasma Rifle"` (`idArma` 6, radio 12, velocidad 8, recarga 14, vida 60). Mismos sprites, sonido y flags que las originales. Desde el 2026-09-30 las selecciona `pickUpItem` con los ítems 15 y 16, y `dropRandomItems` las suelta con poca probabilidad (2026-09-30, sin probar); los drops de jefe y de ayuda siguen solo con las armas 0 a 4. El id 23 lo usa `Droid Laser` (ver abajo); queda libre el 24 (`MAX_WEAPONS` es 25). Los nombres deben ser únicos por `getWeaponByName` y por los `Combo-<nombre>` de objetivos; `Lava Ball` (ids 9 y 10) ya está repetido.
+- **`Droid Laser` (23, 2026-09-30, propuesta entregada, sin probar):** `23 "Droid Laser" 23 2 90 10 10 12 DroidLaserBolt DroidLaserBolt 19 ENT_WEIGHTLESS`: `idArma` propio (23), daño 2, vida de la bala 90 fotogramas, `dx 10 dy 10` (arma apuntada para enemigos con `ENT_AIMS`: la velocidad sale de la dirección unitaria hacia Bob por `dx` y `dy`), recarga 12, sprite `DroidLaserBolt` (desde 2026-09-30; antes `AlienLaserBolt`), sonido 19 y **sin `ENT_BOUNCES`**. Usa un `idArma` propio para no heredar la comprobación `bullet->id == WP_LASER` de `bullets.cpp` (no vista). La usan `Eye Droid V1.0` y `Eye Droid V2.0` en `data/defEnemies`. El sprite `DroidLaserBolt` tiene que existir en `mainSprites` (con `getSprite(..., true)` el juego se cierra al cargar si falta); hue 120 sobre el azul de `laserBolt1.png` (`0,0,192` y `88,168,255`) da rojo (`192,0,0` y `255,88,168`). Archivo de 29 líneas.
 
 ### `data/mainSprites`
-**Función:** definición de todos los sprites que carga `loadResources`. 166 líneas, LF, ASCII, 125 sprites agrupados por líneas vacías, termina con `@EOF@`.
+**Función:** definición de todos los sprites que carga `loadResources`. 169 líneas, LF, ASCII, 128 sprites agrupados por líneas vacías, termina con `@EOF@`.
 
 **Formato:** `Nombre hue sat val archivo1 tiempo1 archivo2 tiempo2 ... @none@ 0` (hasta 8 fotogramas, ver `resources.cpp`). Todas las líneas terminan en `@none@`. Los tiempos son fotogramas por imagen (60 en las estáticas). Las rutas son `gfx/sprites/...`.
 
-- **Reutilización con otro tono:** ya se hace. `AlienLaserBolt` usa `laserBolt1.png` con `hue` 135, `RocketDroid` usa las imágenes de `eyeDroid2` con `hue` 100 y `GrenadeDroid` las mismas con -130; `ItemSignal` y `ItemArrow` reutilizan `miaSignal` y `scannerArrow`.
-- **Íconos de ítems:** `PistolIcon`, `MachineIcon`, `GrenadeIcon`, `LaserIcon` y `SpreadIcon`, una imagen cada uno (`pistolIcon.png`, `machineGunIcon.png`, `grenadeIcon.png`, `laserIcon.png`, `spreadIcon.png`). No hay íconos de cohete ni de plasma.
+- **Reutilización con otro tono:** ya se hace. `AlienLaserBolt` usa `laserBolt1.png` con `hue` 135, `DroidLaserBolt` (2026-09-30, línea 145, justo debajo de `AlienLaserBolt`) usa la misma imagen con `hue` 120 para el láser rojo del `Droid Laser`, `RocketDroid` usa las imágenes de `eyeDroid2` con `hue` 100 y `GrenadeDroid` las mismas con -130; `ItemSignal` y `ItemArrow` reutilizan `miaSignal` y `scannerArrow`.
+- **Íconos de ítems:** `PistolIcon`, `MachineIcon`, `GrenadeIcon`, `LaserIcon` y `SpreadIcon`, una imagen cada uno (`pistolIcon.png`, `machineGunIcon.png`, `grenadeIcon.png`, `laserIcon.png`, `spreadIcon.png`). `RocketIcon` (`gfx/sprites/rocketIcon.png`) y `PlasmaIcon` (`gfx/sprites/plasmaIcon.png`) se agregaron el 2026-09-30 (líneas 107 y 108, una imagen de 60 fotogramas cada uno, `hue`, `sat` y `val` en 0), para los ítems 15 y 16. Son imágenes propias, no reutilizan otras con otro tono. Los dos `.png` tienen que estar en `gfx/sprites` y entrar al pak; este registro no los vio.
 - **Puntos y cerezas:** `PointsPod` a `PointsPod7`, `Cherry`, `DoubleCherries` y `TripleCherries`.
-- **Balas y efectos usados por `data/weapons`:** `FlameBulletRight` y `FlameBulletLeft` (el cohete), `PlasmaBolt` (plasma y escopeta), `LaserBolt`, `AlienLaserBolt`, `Grenade`, `AlienGrenade`, `AimedShot`, `Bomb`, `Stalagtite`, `LavaRock` y `Explosion` (en realidad la imagen `onFire`, usada por el lanzallamas).
+- **Balas y efectos usados por `data/weapons`:** `FlameBulletRight` y `FlameBulletLeft` (el cohete), `PlasmaBolt` (plasma y escopeta), `LaserBolt`, `AlienLaserBolt`, `DroidLaserBolt`, `Grenade`, `AlienGrenade`, `AimedShot`, `Bomb`, `Stalagtite`, `LavaRock` y `Explosion` (en realidad la imagen `onFire`, usada por el lanzallamas).
 - **`FlameThrower`:** existe como sprite pero usa `bubble.png`; el arma 7 pide `Explosion`, no este.
 - **Otros:** Bob (`BobRight`, `AquaBob*`, `JPBob*`), puertas, llaves, enemigos, MIAs, señales y flechas del radar, `HealthBlock` y `OxygenBlock`.
 - **Para agregar un ítem:** una línea nueva en este archivo y regenerar el pak; con `getSprite(nombre, true)` un nombre que falte cierra el juego.
@@ -563,8 +594,8 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 - **`immune`:** `> 120` es aturdimiento tras un golpe (sin control); `1 a 120` es invulnerable pero con control.
 - **Variables de munición y recarga:** son globales.
 - **Disparo con mouse:** lee `engine.mouseLeft` directamente y no pasa por `config.isControl`.
-- **Disparo de la escopeta:** se decide con `player.currentWeapon == &weapon[WP_SPREAD]`; dispara tres balas (`dy` 0, +2 y -2) y gasta 1 de munición por ráfaga. La recarga completa dura `reload * 3` fotogramas (mínimo 30). 658 líneas, CRLF.
-- **Armas de uso limitado (`getLimitedShots`):** granadas (3 disparos) y cohete de Bob (arma 21, 1 disparo); al gastar el último vuelve a la pistola. Desde 2026-09-30 no recargan: `startPlayerReload` no hace nada con ellas y el clic derecho se ignora (`getLimitedShots() == 0` en la condición). Sin compilar ni probar.
+- **Disparo de la escopeta:** se decide con `player.currentWeapon == &weapon[WP_SPREAD]`; dispara tres balas (`dy` 0, +2 y -2) y gasta 1 de munición por ráfaga. La recarga completa dura `reload * 3` fotogramas (mínimo 30). 709 líneas, CRLF (con la mejora del plasma).
+- **Armas de uso limitado (`getLimitedShots`):** granadas (3 disparos), cohete de Bob (arma 21, 1 disparo) y, desde 2026-09-30, plasma de Bob (arma 22, 18 disparos, constantes `WEAPON_PLAYER_PLASMA` y `PLASMA_SHOTS`; entregado, sin compilar ni probar); al gastar el último vuelve a la pistola. Con el plasma limitado, su cargador de 18 en `getDefaultClipSize` deja de usarse para Bob. Desde 2026-09-30 no recargan: `startPlayerReload` no hace nada con ellas y el clic derecho se ignora (`getLimitedShots() == 0` en la condición). Sin compilar ni probar.
 - **Muerte:** `doPlayer` solo llama a `setMissionOver` en la caída al vacío (`y > limitDown + 500`: `MIS_PLAYEROUT` si aún queda salud, `MIS_PLAYERDEAD` si no). La muerte por daño la detecta `doGame` (`player.health < 1`). Con `health < 1` Bob queda sin control, `health` baja 1 por fotograma hasta -60 y ahí se llama `gibPlayer`. El daño de balas solo se aplica con `missionOverReason == MIS_INPROGRESS`.
 
 ### `bullets.cpp` — modificado (versión actual)
@@ -580,6 +611,10 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 - **Cámara adelantada:** `updateCameraLead` (se llama desde `updatePlayerAim`) suaviza un corrimiento igual a `(cursor - centro de pantalla) * factor`, con tope por nivel; `getCameraLead` lo entrega a `Engine::setPlayerPosition` y lo apaga suave si `doPlayer` deja de llamar (más de 250 ms). Nivel en `game.cameraLead` (0 apagada, 1 suave, 2 normal, 3 fuerte); la global `cameraLeadLevel` se eliminó.
 - **Depende de:** `playerAmmo`, `playerAmmoMax` y `startPlayerReload` (de `player.cpp`).
 - **Lanzamiento balístico de granadas enemigas (2026-09-30):** bloque `ENEMY GRENADE`: `solveGrenadeThrow` (ángulo plano que cae sobre el objetivo con la gravedad 0,1 de `doBullets`), `planEnemyGrenade(owner, &power)` (velocidad mínima con margen 1,12, sube si el vuelo supera la vida de la bala; `false` si ni a velocidad máxima llega) y `addEnemyGrenade(owner, power)` (velocidad 5 a 10 según `power`, error de puntería `24 - 6 * skill`, mínimo 4). `addBullet` usa `enemyThrowDX/DY` cuando `enemyThrowActive`, después del bloque `ENT_AIMS`. Simulación aparte contra la física de `doBullets`: falla de 1 a 10 px. No se conocen `dx`, `dy` ni la vida de `Alien Grenades` en `data/weapons`; por eso las velocidades son constantes propias. El archivo subido el 2026-09-30 tiene 1173 líneas (1348 con el cambio). `Alien Grenades` (`data/weapons`): `dx 3`, `dy -2`, vida 240; se usó la vida como fusible en `planEnemyGrenade`.
+- **Barrido enemigo (2026-09-30, entregado, sin compilar ni probar):** bloque `ENEMY SWEEP`. `addEnemyAimedShot(owner, grados)` fija `enemyAimOffsetActive` y `enemyAimOffsetRad` y llama a `addBullet`; en el bloque `ENT_AIMS` apunta al centro de Bob, sin dispersión, y rota el vector. Sin desvío todo queda igual. 1386 líneas, CRLF.
+- **Fogonazo de salida rojo (2026-09-30, entregado, sin compilar ni probar):** en `addBullet`, después de `map.addBullet(bullet)`, el fogonazo de 2 partículas usa `flashColor`: rojo si `owner != &player`, amarillo si dispara Bob. Antes era siempre amarillo. Afecta a todas las armas enemigas (no solo al `Droid Laser`) y coincide con la estela de `addBulletTrail`, que ya era roja para balas enemigas (cian para `WP_LASER` de Bob). Las granadas siguen sin fogonazo.
+- **Deflexión de granadas (2026-09-30, entregado, sin compilar ni probar):** `doBullets` llama `deflectGrenadeAtDroids(bullet)` (definida en `enemies.cpp`, declarada `extern` arriba) justo antes de los dos `bulletHasCollided`. 1399 líneas en total, CRLF.
+- **Aviso de disparo a los droides (2026-09-30, entregado, sin compilar ni probar):** `addBullet` declara `extern notifyPlayerShot(...)` (definida en `enemies.cpp`) y, dentro de `if (owner == &player)` tras `game.incBulletsFired()`, la llama con el centro de Bob y la velocidad de la bala cuando esta tiene `ENT_WEIGHTLESS` (balas rectas; no las granadas). El droide utilitario reacciona con un dash. 1395 líneas, CRLF (1399 con la deflexión).
 - **Armas con `dy`:** cualquier arma con `dy` distinto de 0 se trata como lanzada (gravedad, movimiento de Bob y de trenes, y con mouse velocidad vertical limitada a ±8). Bajo el agua solo disparan la pistola y `WP_AIMEDPISTOL`. `game.incBulletsFired()` usa `game.currentWeapon`. 996 líneas, CRLF.
 
 ### `traps.h`
@@ -645,17 +680,18 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 - **`free()`:** libera cada superficie con `SDL_FreeSurface` y reinicia los contadores. Los sprites de `loadResources` se liberan con `graphics.free()` en cada misión.
 
 ### `items.cpp`
-**Función:** ítems del mapa: crearlos, soltarlos al morir enemigos, recogerlos y cargar `data/defItems`. 453 líneas, LF, UTF-8 (un comentario de `pickUpItem` tiene un carácter dañado; no lo toques). Incluye `items.h` (sin ver) y declara `resetPlayerAmmo` por su cuenta.
+**Función:** ítems del mapa: crearlos, soltarlos al morir enemigos, recogerlos y cargar `data/defItems`. 479 líneas (2026-09-30; antes 453), LF, UTF-8 (un comentario de `pickUpItem` tiene un carácter dañado; no lo toques). Incluye `items.h` (visto el 2026-09-30: CRLF, solo `include "headers.h"` y `extern` de dependencias, sin declarar ninguna función de `items.cpp`; quien llama a `dropRandomItems` la declara por su cuenta) y declara `resetPlayerAmmo` por su cuenta.
 
 - **`addItem(tipo, nombre, x, y, sprite, salud, valor, flags, movimientoAleatorio)`:** crea el ítem con `ENT_INANIMATE + ENT_BOUNCES + ENT_COLLECTABLE`, lo levanta si nace dentro de suelo y suma `rand % 120` a la salud (vida en fotogramas). `ITEM_MISC_INVISIBLE` pasa a `ITEM_MISC_NOSHOW` si `gameData.completedWorld` o `skill == 3`.
 - **`dropRandomItems(x, y)`** (lo llama `doEnemies` al morir un enemigo con `value`, dos veces en `enemies.cpp`): no suelta nada si el tile es sólido; en misión de jefe usa `dropBossItems`. Si no, suelta de 1 a 5 ítems, cada uno de puntos por defecto, con 1 de 8 de ser un arma al azar (`ITEM_PISTOL` a `ITEM_SPREAD`) y luego 1 de 13 de ser cereza (con `cherryChance = 10 + 10 * skill`: 1 triple, 5 dobles, el resto simple). Vida 240 más azar, con `ENT_DYING`. Estimación (sin medir): ~30 % de las muertes sueltan al menos un arma.
 - **`dropBossItems`:** 1 de 5; ítem de `ITEM_PISTOL` a `ITEM_DOUBLECHERRY` (solo cerezas si Bob está en agua) y 1 de 10 de triple cereza.
 - **`dropHelperItems(x, y)`** (lo llama `SPW_ITEM`): de 1 a 5 ítems entre `ITEM_PISTOL` y `ITEM_TRIPLECHERRY` (armas y cerezas, sin puntos).
 - **`pickUpItem`:** con `ITEM_PISTOL` a `ITEM_SPREAD` hace `player.currentWeapon = &weapon[item->id]`, `game.currentWeapon = item->id` y `resetPlayerAmmo()`. **El id del ítem se usa directo como índice de `weapon[]` y de `bulletsFired[]`**, y el arma recogida reemplaza a la actual (incluso la pistola a una ametralladora). Puntos suman `addPlayerScore`; cerezas curan hasta `MAX_HEALTH`; `ITEM_MISC` lo deja cargado por Bob. Muestra "Picked up a/an ..." salvo con puntos o en misión de jefe; llama a `checkObjectives` y da la medalla `LRTS_PART`.
+- **Ítems 15 y 16 (2026-09-30):** constantes locales `ITEM_ROCKET_LAUNCHER` (15) e `ITEM_PLASMA_GUN` (16), definidas en `items.cpp` y no en el enum de `defs.h`. `getWeaponIdFromItem` (función `static`) devuelve 21 y 22 para ellas y el `itemId` tal cual para el resto. `pickUpItem` las suma al bloque de armas (`currentWeapon = &weapon[weaponId]`, `game.currentWeapon = weaponId`, `resetPlayerAmmo()`). Muestran "Picked up a ..." y llaman a `checkObjectives`, porque su id es mayor que `ITEM_POINTS7`. **Drops (2026-09-30, entregado, sin compilar ni probar):** `dropRandomItems` sigue eligiendo armas entre `ITEM_PISTOL` y `ITEM_SPREAD`, pero ahora 1 de cada `SPECIAL_WEAPON_DROP_CHANCE` (constante local, 10; con 0 se apaga) de esas armas pasa a ser cohete o plasma (mitad y mitad). Estimación sin medir: ~3 % de las muertes sueltan una de las dos. `dropBossItems` (0 a `ITEM_DOUBLECHERRY`) y `dropHelperItems` (0 a `ITEM_TRIPLECHERRY`) no las sueltan. **Drop por rango (2026-09-30, entregado, sin compilar ni probar):** `dropRandomItems(x, y)` ahora llama a `dropRandomItemsByRank(x, y, 0)`, función nueva con rango 0 normal, 1 veterano y 2 sargento; el número de la probabilidad baja 3 por rango (10, 7, 4, mínimo 2). Como `items.h` no declara funciones, no hay que cambiarlo; `enemies.cpp` ya la declara con `extern` y la llama con el rango en sus dos llamadas. Si `enemies.cpp` los va a soltar, conviene mover las constantes al enum de `defs.h` (quedarían en 15 y 16 antes de `ITEM_MISC`), lo que obliga a una compilación limpia.
 - **`doItems`:** actualiza dentro de `ACTIVE_W/H`, parpadea con salud menor que 60, recoge por colisión si es `ENT_COLLECTABLE` y elimina al llegar a salud 0 salvo que Bob lo cargue.
 - **Otras:** `stealCrystal`, `dropCarriedItems` (devuelve lo cargado al último checkpoint), `carryingItem`, `showCarriedItems` (centra con 1280 fijo).
 - **`loadDefItems()`:** lee `data/defItems` con `sscanf`, llena `defItem[id]` y pide cada sprite con `getSprite(..., true)`; no comprueba `MAX_ITEMS` y sin `@EOF@` el `strcmp` recibe un puntero nulo.
-- **Ids nuevos de ítem:** las constantes `ITEM_*` son un enum de `defs.h` (armas 0 a 4, cerezas 5 a 7, puntos 8 a 14, `ITEM_MISC` = 100). Los ítems de mapa cuentan con `id >= ITEM_MISC`, así que los ids 15 a 24 quedan libres y caben en `defItem[MAX_ITEMS]` (25). `pickUpItem` usa `weapon[item->id]` directo, por lo que un ítem nuevo necesita un mapeo al arma 21 o 22. Su nombre no debe coincidir con el `target` de un objetivo (ver `objectives.cpp`).
+- **Ids nuevos de ítem:** las constantes `ITEM_*` son un enum de `defs.h` (armas 0 a 4, cerezas 5 a 7, puntos 8 a 14, `ITEM_MISC` = 100). Los ítems de mapa cuentan con `id >= ITEM_MISC`, así que los ids 15 a 24 quedan libres y caben en `defItem[MAX_ITEMS]` (25). `pickUpItem` usa `weapon[item->id]` directo, por lo que un ítem nuevo necesita un mapeo al arma 21 o 22 (hecho para 15 y 16 con `getWeaponIdFromItem`). Su nombre no debe coincidir con el `target` de un objetivo (ver `objectives.cpp`).
 
 ### `resources.cpp`
 **Función:** carga de todo lo que necesita una misión (`loadResources`), más `loadSprite` y `loadSound`. 180 líneas, LF, ASCII. Incluye `resources.h` (sin ver).
@@ -709,7 +745,7 @@ Raíz: `C:\Users\Usuario\Desktop\Proyectos\blockwars\`
 - **Trucos:** el código `LOCKANDLOAD` se busca en las últimas 25 teclas; `cheats` no se inicializa en el constructor.
 
 ### `game.cpp`
-**Función:** sección de juego: bucle de la misión (`doGame`), fin de misión, menú de pausa, pantalla de Game Over y pantallas auxiliares. 981 líneas, LF. Leído completo. Incluye `game.h` (sin ver).
+**Función:** sección de juego: bucle de la misión (`doGame`), fin de misión, menú de pausa, pantalla de Game Over y pantallas auxiliares. 981 líneas, LF. Leído completo. Incluye `game.h` (sin ver). Al empezar una misión sin continuar desde un punto de control pone `player.currentWeapon = &weapon[WP_PISTOL]` y llama `resetPlayerAmmo()`; al continuar desde un punto de control no toca el arma. No lee ni restaura `game.currentWeapon`, así que el cohete y el plasma de Bob no pasan de una misión a otra (2026-09-30).
 
 - **Funciones:** `newGame`, `showInGameOptions`, `doGameStuff`, `gameover`, `showMissionInformation`, `beamInPlayer`, `doGame`.
 - **`doGameStuff()`:** entrada, `config.populate`, `replayData.read`; `config.doPause()` solo con `MIS_INPROGRESS`; luego actualiza y dibuja fondo, efectos, trenes, trampas, mapa, líneas, interruptores, ítems, balas, MIAs, jefes, enemigos, obstáculos, teletransportadores, viento y partículas. También la usan `gameover`, `showMissionInformation` y `beamInPlayer`.
@@ -781,8 +817,8 @@ No se suben todos los archivos en cada sesión, y este registro es un mapa del p
 ## Por ubicar
 
 - **`CFileData.h`:** define `FileData` (nombre, `location`, `cSize`, `fSize`); hace falta su disposición exacta para generar un pak compatible.
-- **`items.h`, `resources.h` y `objectives.h`:** sin ver.
-- **`items.h`, `weapons.h` y `CWeapon.h`:** sin ver.
+- **`resources.h` y `objectives.h`:** sin ver.
+- **`weapons.h` y `CWeapon.h`:** sin ver.
 - **Barra de estado (`doStatusBar`):** sin ubicar el archivo; muestra el arma actual y podría no contemplar armas nuevas.
 - **`defines.h` subido:** coincide con la entrada `data/defines.h` (87 definiciones, LF), pero no se sabe si es la copia de `data/` o la de `src/`, ni si son el mismo archivo.
 - **`src/defines.h`:** lo incluye `defs.h`, así que existe; sin ver.
@@ -800,17 +836,19 @@ No se suben todos los archivos en cada sesión, y este registro es un mapa del p
 | Opciones de menú (mouse sí/no, previsualización, estela, cámara, temblor) | Variables nuevas en `Game` (`CGame.h` + `CGame.cpp`); `bullets.cpp` y `explosions.cpp` leen de `game`. Guardado en `init.cpp` (línea 3 del `config`); submenú Gameplay en `options.cpp`, `optionWidgets` y `gameplayWidgets`. Probado en pantalla: funciona |
 | Salud de enemigos | `defEnemies` con salud base 2 o 3 en Blobs, 4 a 6 en Eye Droids y Spider Blob sin cambio (15); `enemies.cpp` con rangos por bonus (+2 veterano, +4 sargento) y tope de salud base 3. Probado en pantalla: funciona |
 | Mira con arco de recarga y balas restantes | Sin empezar |
-| Mejoras de IA de enemigos | Propuestas 1 y 2 completadas; granadas estratégicas implementadas; resto pendiente |
+| Mejoras de IA de enemigos | Propuestas 1, 2 y 10 completadas; granadas estratégicas implementadas; resto pendiente |
+| Droide utilitario (Eye Droid V1.0) | Entregado (2026-09-30), sin compilar ni probar: escudo de 5 puntos que tarda 10 s en volver tras romperse; pool de 3 dashes que cuestan 1 de escudo y se recarga con él; destino que no cae bajo el mapa ni sobre un vacío; esquive en el instante del disparo de Bob (`notifyPlayerShot`, `bullets.cpp` + `enemies.cpp`); deflexión de granadas por 2 puntos de escudo (`deflectGrenadeAtDroids`). Pendiente: confirmar el significado de `map.limitDown`, probar `DASH_DODGE_CHANCE` y decidir si se quita el código de `safeMode` |
 | Granadas enemigas con carga | Hecho en `enemies.cpp` + `bullets.cpp` (ver sus entradas). Sin compilar ni probar. Verificado con `data/weapons`: `Alien Grenades` tiene vida 240 y el plan usa como tope de vuelo el 85 % (204 fotogramas); un vuelo de 720 px dura unos 100 fotogramas |
 | Sin recarga en granadas y cohetes de Bob | Hecho en `player.cpp`. Sin compilar ni probar |
 | Congelamiento al morir | Resuelto tras `clean_and_compile.bat`. Causa probable: `Makefile.windows` no tenía `CGame.h` como dependencia de los demás `.o` |
 | Dependencias automáticas en el Makefile | Hecho en `Makefile.windows`. Sin probar compilando |
 | Correcciones en `spawnPoints.cpp` | Puertas, límites de `SPW_ITEM` y jefe nulo. Sin compilar ni probar |
-| Balance de armas y armas de enemigos soltables | Mejora 1 entregada: `data/weapons` con las armas 21 y 22 de Bob (`dy 0`) y cargador de plasma 18 en `weapons.cpp`. Mejora 2 entregada: estadísticas de `Game` con `MAX_WEAPONS` posiciones en `CGame.h` y `CGame.cpp`. Ambas sin compilar ni probar y sin efecto visible hasta que un ítem dé las armas. Pendiente en orden: ítems 15 y 16 (`defItems`, `mainSprites` con íconos reutilizados, mapeo en `items.cpp`), munición temporal en `player.cpp`, drops por rango en `enemies.cpp`, lanzallamas |
+| Balance de armas y armas de enemigos soltables | Mejora 1 entregada: `data/weapons` con las armas 21 y 22 de Bob (`dy 0`) y cargador de plasma 18 en `weapons.cpp`. Mejora 2 entregada: estadísticas de `Game` con `MAX_WEAPONS` posiciones en `CGame.h` y `CGame.cpp`. Ambas sin compilar ni probar. Mejora 3 entregada (2026-09-30): ítems 15 y 16 en `defItems` y mapeo a las armas 21 y 22 en `items.cpp`; íconos `RocketIcon` y `PlasmaIcon` ya definidos en `mainSprites` (falta confirmar que los `.png` estén en el pak) y estado de compilación y prueba sin confirmar, y `dropRandomItems` los suelta con una probabilidad fija (`SPECIAL_WEAPON_DROP_CHANCE` 10, sin probar). Mejora 4 entregada (2026-09-30): el plasma de Bob (22) pasa a ser arma de uso limitado en `player.cpp` (18 disparos y vuelve a la pistola), sin compilar ni probar. Mejora 5 entregada (2026-09-30): `dropRandomItemsByRank` en `items.cpp`, sin compilar ni probar. Rango conectado en `enemies.cpp` (2026-09-30, 2814 líneas, sin compilar ni probar). Pendiente en orden: lanzallamas |
+| Láser de los Eye Droid | Entregado (2026-09-30), sin compilar ni probar. `Droid Laser` (23) en `data/weapons`; V1.0 y V2.0 lo usan en `defEnemies`; `bullets.cpp` con `addEnemyAimedShot`; `enemies.cpp` con cargador, recarga y modos único, ráfaga y barrido (ver sus entradas). Constantes ajustables en `enemies.cpp` (`LASER_*`). Láser rojo (2026-09-30, sin compilar ni probar): sprite `DroidLaserBolt` (hue 120) en `mainSprites`, `data/weapons` lo usa y `bullets.cpp` da fogonazo rojo a los disparos enemigos |
 
 ### Propuestas de IA de enemigos
 
-Base actual (`enemies.cpp`): percepción gradual, oído del disparo, memoria del último punto visto, turnos de ataque, aviso antes de disparar, ráfagas, puntería con anticipación y escuadras con sargento.
+Base actual (`enemies.cpp`): droide utilitario con escudo y dashes, búsqueda activa, percepción gradual, oído del disparo, memoria del último punto visto, turnos de ataque, aviso antes de disparar, ráfagas, puntería con anticipación y escuadras con sargento.
 
 | # | Propuesta | Estado actual | Riesgo | Archivos a pedir |
 |---|---|---|---|---|
@@ -846,7 +884,7 @@ Base actual (`enemies.cpp`): percepción gradual, oído del disparo, memoria del
 | 7 | Cuidado con precipicios y líquidos peligrosos | La comprobación actual no evalúa el paso futuro ni el aterrizaje. En limo o lava mueren (`doEnemies`); el agua también se vuelve peligrosa en niveles de hielo. Propuesta: mirar el borde delantero y el suelo de apoyo; si no hay suelo o la caída prevista termina en un tile mortal, frenar o cambiar el destino. Saltar un hueco solo con aterrizaje comprobado. Voladores y nadadores requieren reglas distintas. Los golpes y explosiones de Bob siguen pudiendo empujarlos | Medio. Efecto secundario: menos enemigos muertos por limo o lava (¿afecta al puntaje?) | `enemies.cpp`, `CMap.h`, `CMap.cpp`, `map.cpp`, `entities.cpp` |
 | 8 | Cobertura: saltar y esconderse detrás del terreno | El que espera su turno de ataque se queda a la vista; herido no huye ni se cubre (solo hay `confused` en escuadras sin sargento). Propuesta por fases: (a) los que esperan turno (máximo `1 + skill` atacan a la vez) buscan un punto de cobertura cercano (a unos 6 tiles, alcanzable sin riesgos) sin línea de tiro a Bob y esperan ahí; (b) el que recibe el turno asoma a una posición de tiro a 1 o 2 tiles, dispara su ráfaga y vuelve; (c) los heridos (salud baja) se cubren y no atacan un rato; (d) saltar para llegar a la cobertura solo con `ENT_JUMPS` y aterrizaje seguro. Escala con `skill` y con el rango. No aplica a voladores, `ENT_ALWAYSCHASE` ni jefes. Aprovecha lo que ya existe: turnos de ataque y aviso previo | Alto (máquina de estados nueva; choca con atasco, escuadras y turnos) | `enemies.cpp` y los de la 6 |
 | 9 | Efecto altura (high ground) | Ver el análisis de abajo. Propuestas: (a) diagnosticar con un registro temporal; (b) ventana vertical de percepción según la línea libre y no un corte fijo; (c) visión desde el ojo del enemigo a varios puntos del cuerpo de Bob; (d) alcance de disparo vertical o reposicionarse | Bajo a medio para (a) a (c); medio para (d) | `enemies.cpp`; para (d) también `data/weapons` y `bullets.cpp` |
-| 10 | Búsqueda activa tras perder de vista | Van al último punto visto, retienen 120 o 360 fotogramas y luego la conciencia baja. Propuesta: al llegar, mirar hacia ambos lados y avanzar unos tiles en la dirección que llevaba Bob (guardar su `dx` al perderlo de vista); los de una escuadra se reparten a distintas distancias | Bajo a medio | `enemies.cpp` |
+| 10 | ~~Búsqueda activa tras perder de vista~~ | **Implementada** en `doAI` para los que caminan (ver `enemies.cpp`); sin probar. Descripción original: Van al último punto visto, retienen 120 o 360 fotogramas y luego la conciencia baja. Propuesta: al llegar, mirar hacia ambos lados y avanzar unos tiles en la dirección que llevaba Bob (guardar su `dx` al perderlo de vista); los de una escuadra se reparten a distintas distancias | Bajo a medio | `enemies.cpp` |
 | 11 | Conciencia de la mira y la recarga de Bob | Los enemigos no saben hacia dónde apunta Bob (`aimDirX/Y`, en `bullets.cpp`) ni si recarga (`playerReloading`, en `player.cpp`). Propuesta: (a) con Bob apuntándoles y disparando, los que tienen cobertura cerca (8) se cubren; (b) con Bob recargando, los que tienen turno se adelantan o disparan sin esperar. Hay que exponer un getter de la dirección de puntería | Medio; puede frustrar si reaccionan de más (mismo criterio que la 4) | `enemies.cpp`, `bullets.cpp`, `player.cpp` |
 
 **Análisis del efecto altura**
@@ -874,14 +912,14 @@ Plan sugerido:
 5. Propuesta 9 (d) junto con la 3.
 6. Propuestas 2 y 4, con la 11.
 7. Propuesta 8 (cobertura), la más grande; por fases.
-8. Propuestas 10 y 5, opcionales.
+8. Propuesta 5, opcional (la 10 ya está hecha).
 
 **Notas transversales**
 
 - **Rendimiento:** `senseSurroundings` corre cada fotograma por enemigo; con varios rayos conviene evaluar cada 3 fotogramas, con desfase por enemigo, y guardar el resultado en `EnemyAIState`.
 - **Valores ajustables:** constantes al inicio de `enemies.cpp`, escaladas con `game.skill`.
 - **Opción de menú:** una casilla "IA táctica" en el submenú Gameplay (variable nueva en `Game`, por defecto 1) implicaría tocar `CGame.h`, `CGame.cpp`, `options.cpp`, `gameplayWidgets` e `init.cpp`.
-- **Archivo grande:** casi todo vive en `enemies.cpp` (2094 líneas, CRLF).
+- **Archivo grande:** casi todo vive en `enemies.cpp` (3241 líneas tras los cambios del droide de 2026-09-30; el adjunto subido tenía 2991; CRLF).
 
 ---
 

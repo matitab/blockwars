@@ -228,8 +228,8 @@ int title()
 	float offX = 0;
 
 	// Title layout was designed for 640x480: centre it on the real surface (1280x720)
-	const int dx = (graphics.screen->w - 640) / 2;
-	const int dy = (graphics.screen->h - 480) / 2;
+	const int dx = (graphics.logicalW() - 640) / 2;
+	const int dy = (graphics.logicalH() - 480) / 2;
 
 	engine.flushInput();
 	engine.clearInput();
@@ -303,8 +303,8 @@ int title()
 			{
 				graphics.blit(subTitle, 320 + dx, 180 + dy, graphics.screen, true);
 				for (int i = 0; copyright[i]; i++)
-					graphics.blit(copyright[i], 10, graphics.screen->h - 20 - i * 18, graphics.screen, false);
-				graphics.blit(version, (graphics.screen->w - 10 - version->w), graphics.screen->h - 20, graphics.screen, false);
+					graphics.blit(copyright[i], 10, graphics.logicalH() - 20 - i * 18, graphics.screen, false);
+				graphics.blit(version, (graphics.logicalW() - 10 - version->w), graphics.logicalH() - 20, graphics.screen, false);
 				allFadedOn = true;
 			}
 
@@ -496,7 +496,7 @@ void doCredits()
 
 	line = strtok(NULL, "\n");
 
-	pos1 = graphics.screen->h + 40;	// start just below the bottom edge of the view
+	pos1 = graphics.logicalH() + 40;	// start just below the bottom edge of the view
 
 	graphics.setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
 
@@ -546,7 +546,7 @@ void doCredits()
 		engine.doTimeDifference();
 
 		SDL_FillRect(graphics.screen, NULL, graphics.black);
-		graphics.blit(backdrop, (graphics.screen->w - backdrop->w) / 2, graphics.screen->h - backdrop->h, graphics.screen, false);
+		graphics.blit(backdrop, (graphics.logicalW() - backdrop->w) / 2, graphics.logicalH() - backdrop->h, graphics.screen, false);
 
 		float speed = 0.25;
 
@@ -557,18 +557,18 @@ void doCredits()
 		
 		deviceY -= (speed* engine.getTimeDifference());
 		
-		if ((deviceY > 10) && (deviceY < graphics.screen->h - 10))
+		if ((deviceY > 10) && (deviceY < graphics.logicalH() - 10))
 		{
-			graphics.blit(device, graphics.screen->w / 2, (int)deviceY, graphics.screen, true);
+			graphics.blit(device, graphics.logicalW() / 2, (int)deviceY, graphics.screen, true);
 		}
 
 		for (i = 0 ; i < numberOfCredits ; i++)
 		{
 			y[i] -= (speed * engine.getTimeDifference());
 			
-			if ((y[i] > 10) && (y[i] < graphics.screen->h - 10))
+			if ((y[i] > 10) && (y[i] < graphics.logicalH() - 10))
 			{
-				graphics.blit(credit[i], graphics.screen->w / 2, (int)y[i], graphics.screen, true);
+				graphics.blit(credit[i], graphics.logicalW() / 2, (int)y[i], graphics.screen, true);
 			}
 
 			graphics.drawRect(0, 675, 1280, 45, graphics.black, graphics.screen);
@@ -598,8 +598,8 @@ void doQuit()
 	SDL_Surface *book = graphics.loadImage("gfx/main/book.png");
 
 	// Layout designed for 640x480: centre it on the real surface
-	const int dx = (graphics.screen->w - 640) / 2;
-	const int dy = (graphics.screen->h - 480) / 2;
+	const int dx = (graphics.logicalW() - 640) / 2;
+	const int dy = (graphics.logicalH() - 480) / 2;
 
 	graphics.setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
 	graphics.setFontSize(1);

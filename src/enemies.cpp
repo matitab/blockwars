@@ -26,6 +26,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // Enemy grenade throws (bullets.cpp): plan says how much charge a throw needs, add makes the throw
 extern bool planEnemyGrenade(Entity *owner, float *power);
 extern void addEnemyGrenade(Entity *owner, float power);
+extern void addEnemyAimedShot(Entity *owner, float angleDegrees);
+// Eye Droid beam (bullets.cpp): one damage tick, delivered through the normal bullet collisions
+extern void addDroidBeamHit(Entity *owner, float x, float y, int damage);
+
+// Item drops (items.cpp): the rank (0 soldier, 1 veteran, 2 sergeant) makes the special weapons drop more often
+extern void dropRandomItemsByRank(int x, int y, int rank);
 
 // Extra per-enemy AI state (kept here so no other header has to change)
 struct EnemyAIState
@@ -52,8 +58,45 @@ struct EnemyAIState
 	int grenadeTimer; // frames since grenade was thrown (to know when it's safe)
 	int telegraphTotal; // length of the current warning (for the grenade charge bar)
 	bool charging;   // the current warning is a grenade being held
+	bool utilityDroid; // this enemy is the utility droid (shield, dashes, safe mode)
+	int shield;      // electromagnetic shield points left (utility droid only)
+	int maxShield;   // shield points it started with (for the glow and the recharge)
+	int dashes;      // teleport dashes left in the pool
+	int rechargeTimer; // frames left of the safe mode recharge
+	int stagger;     // frames left of the stun caused by hits while the shield is down
+	bool safeMode;   // shield broken or dash pool empty: weapons off, crawling, dodging with the dashes it has left, hiding until the recharge ends
+	int dashCooldown; // frames until the next dash is allowed
+	bool dashReact;  // the player just hit it: may answer with a dash
+	int staggerImmune; // frames after a stagger in which it can't be staggered again
+	int lastDir;     // which way the player was moving when last noticed (-1 / 1, 0 = unknown)
+	bool searching;  // sweeping the area around the last known position
+	int searchX;     // current point of the sweep
+	int searchDir;   // side of the last known position the next sweep point goes to (-1 / 1)
+	int searchWait;  // frames left looking around before moving to the next sweep point
+	float energy;    // Droid Laser: energy left in the charge bar (float to allow beam fallback when the other modes do not fit)
+	float maxEnergy; // Droid Laser: full charge (0 = not set up yet)
+	int laserMode;   // Droid Laser: preferred firing mode (LASER_MODE_*), re-rolled after every reload
+	int volleyMode;  // Droid Laser: mode of the volley being fired
+	int volleyTotal; // Droid Laser: shots in the current volley
+	int volleyIndex; // Droid Laser: shots already fired in the current volley
+	int sweepDir;    // Droid Laser: direction the sweep crosses the player (-1 / 1)
+	int beamDir;     // Droid Laser: side the beam starts from, and the way it sweeps across the player (-1 / 1)
+	int beamTimer;   // Droid Laser: frames left of the beam being fired (0 = no beam)
+	int beamTotal;   // Droid Laser: length of the current beam in frames
+	int beamTick;    // Droid Laser: frames until the beam may hurt Bob again
+	float beamAngle; // Droid Laser: direction of the beam (radians, y grows downward)
+	float beamStep;  // Droid Laser: how much the beam turns each frame (radians)
+	float beamLen;   // Droid Laser: length of the beam this frame (pixels, up to a wall or Bob)
+	bool hasCover;   // safe mode: a hiding spot has been chosen (coverX / coverY)
+	int coverX, coverY; // top-left position of that spot
+	int coverRetry;  // frames until the next cover search after a failed one
+	int coverCheck;  // frames until the chosen spot is checked against Bob's position again
+	int coverTimer;  // frames until the next check that it is getting closer to the cover
+	int snapX, snapY; // where the droid was at the last of those checks
+	bool hasBadCover; // a spot it could not reach (stuck on the way): not chosen again
+	int badCoverX, badCoverY; // that spot
 
-	EnemyAIState() : telegraph(0), fireNow(false), fireTimeout(0), awareness(0), lostSight(0), alerted(false), canSee(false), lastX(0), lastY(0), prevX(0), stuck(0), maxHealth(0), burstLeft(0), burstTimeout(0), attackStamp(0), rank(0), squadLeader(NULL), confused(0), panicDir(1), grenadeX(0), grenadeY(0), grenadeTimer(0), telegraphTotal(0), charging(false) {}
+	EnemyAIState() : telegraph(0), fireNow(false), fireTimeout(0), awareness(0), lostSight(0), alerted(false), canSee(false), lastX(0), lastY(0), prevX(0), stuck(0), maxHealth(0), burstLeft(0), burstTimeout(0), attackStamp(0), rank(0), squadLeader(NULL), confused(0), panicDir(1), grenadeX(0), grenadeY(0), grenadeTimer(0), telegraphTotal(0), charging(false), utilityDroid(false), shield(0), maxShield(0), dashes(0), rechargeTimer(0), stagger(0), safeMode(false), dashCooldown(0), dashReact(false), staggerImmune(0), lastDir(0), searching(false), searchX(0), searchDir(0), searchWait(0), energy(0.0f), maxEnergy(0.0f), laserMode(0), volleyMode(0), volleyTotal(0), volleyIndex(0), sweepDir(1), beamDir(1), beamTimer(0), beamTotal(0), beamTick(0), beamAngle(0.0f), beamStep(0.0f), beamLen(0.0f), hasCover(false), coverX(0), coverY(0), coverRetry(0), coverCheck(0), coverTimer(0), snapX(0), snapY(0), hasBadCover(false), badCoverX(0), badCoverY(0) {}
 };
 
 static std::map<Entity*, EnemyAIState> aiState;
@@ -90,6 +133,78 @@ static const int GRENADE_COOLDOWN = 120; // about 2 seconds
 static const int GRENADE_SAFE_DISTANCE = 150; // stay this far from own grenade
 static const int GRENADE_CHARGE_FRAMES = 45;  // extra hold time of a full-power throw (about 0.75 s)
 
+// Droid Laser (weapon 23 in data/weapons): magazine, reload and firing modes of the Eye Droids
+static const int WEAPON_DROID_LASER = 23;
+static const float LASER_CLIP_SIZE = 12.0f;    // energy before it has to reload
+static const int LASER_RELOAD_FRAMES = 150;     // reload time on the easiest difficulty
+static const int LASER_RELOAD_SKILL_CUT = 20;   // frames shaved off per difficulty level
+static const int LASER_MODE_SINGLE = 0;
+static const int LASER_MODE_BURST = 1;
+static const int LASER_MODE_SWEEP = 2;          // fan-shaped volley crossing the player
+static const int LASER_MODE_BEAM = 3;           // continuous beam
+static const int LASER_BURST_CHANCE = 35;       // % of volleys that are bursts
+static const int LASER_SWEEP_BASE_CHANCE = 10;  // % of sweeps on the easiest difficulty...
+static const int LASER_SWEEP_SKILL_CHANCE = 10; // ...plus this per difficulty level
+static const int LASER_SWEEP_SHOTS = 4;         // bullets in a sweep, plus 1 per difficulty level
+static const int LASER_SWEEP_GAP = 5;           // frames between the bullets of a sweep
+static const int LASER_SWEEP_WARNING = 12;      // extra warning before a sweep
+static const float LASER_SWEEP_HALF_WIDTH = 55.0f; // pixels around the player the sweep covers
+static const float LASER_SWEEP_MIN_ANGLE = 4.0f;   // degrees, half width of the fan
+static const float LASER_SWEEP_MAX_ANGLE = 25.0f;
+static const int LASER_BEAM_BASE_CHANCE = 10;   // % of beams on the easiest difficulty...
+static const int LASER_BEAM_SKILL_CHANCE = 10;  // ...plus this per difficulty level
+static const int LASER_BEAM_FRAMES = 90;        // how long the beam stays on (1.5 s)
+static const float LASER_BEAM_CLIP_COST = 3.0f; // energy one whole beam uses; it can still fire when other modes do not fit
+static const int LASER_BEAM_WARNING = 12;       // extra warning before a beam
+static const int LASER_BEAM_TICK = 15;          // frames between two hits while the beam touches Bob
+static const int LASER_BEAM_DAMAGE = 1;         // health Bob loses per hit (health is a whole number: the beam is weaker through its rate, not through each hit)
+static const int LASER_BEAM_RANGE = 720;        // longest the beam can be (pixels)
+static const int LASER_BEAM_STEP = 4;           // pixels between the points tested along the beam
+static const float LASER_BEAM_HALF_WIDTH = 55.0f; // pixels around the player the beam sweeps across
+static const float LASER_BEAM_MIN_ANGLE = 4.0f;   // degrees, half width of the sweep
+static const float LASER_BEAM_MAX_ANGLE = 25.0f;
+
+// Utility droid (the common Eye Droid): electromagnetic shield, dash pool and recharge
+static const char *UTILITY_DROID_NAME = "Eye Droid V1.0";
+static const int DROID_SHIELD_POINTS = 5;       // shield points at spawn
+static const int DROID_MAX_DASHES = 3;          // teleport dashes in the pool
+static const int DASH_SHIELD_COST = 1;          // shield points one dash consumes (the shield has DROID_SHIELD_POINTS)
+static const int DROID_RECHARGE_FRAMES = MAX_FPS * 10; // once the shield breaks (or the dashes run out) it is back, full, after 10 s (not before)
+static const int DROID_RECHARGE_CAP = MAX_FPS * 10;    // the aggression penalty can never push the timer past this
+static const int DROID_STAGGER_FRAMES = 4;      // a direct hit with the shield down freezes it this long
+static const int DROID_STAGGER_IMMUNITY = 20;   // ...and it can't be frozen again for this long (no stun-lock)
+static const int DROID_DEFLECT_COST = 2;        // shield points one grenade deflection consumes
+static const int DROID_DEFLECT_MARGIN = 40;     // the repulsor field reaches this far (pixels) beyond the droid's half size
+static const int DASH_MIN_RADIUS = 64;          // a dash jumps at least this far (pixels)
+static const int DASH_MAX_RADIUS = 160;         // ...and at most this far
+static const int DASH_TRIES = 8;                // candidate spots tested per dash
+static const int DASH_COOLDOWN = 40;            // frames between two dashes
+static const int DASH_HIT_CHANCE = 0;           // % chance to dash after being hit (0: it no longer reacts to hits, it dodges the shot itself)
+static const int DASH_DODGE_CHANCE = 100;       // % chance that a droid in the line of fire dashes the instant the player shoots
+static const int DASH_DODGE_RANGE = 1000;       // farthest a droid reacts to a shot (pixels along the line of fire)
+static const int DASH_DODGE_CLEARANCE = 40;     // extra pixels a dodge spot keeps from the line of fire (on top of the droid's half size)
+static const int DASH_CLOSE_RANGE = 110;        // the player this close (pixels) makes it dash away
+static const int DASH_CLOSE_CHANCE = 8;         // % per frame while the player is that close
+static const int DASH_IDLE_PERMILLE = 4;        // per-mille per frame of a random dash while alert and seeing the player
+
+// Safe mode: starts when the shield breaks and lasts DROID_RECHARGE_FRAMES from that moment
+static const int DROID_SAFE_MOVE_PERIOD = 3;    // it crawls: it only moves on one frame in this many
+static const int DASH_SAFE_COOLDOWN = 20;       // frames between dashes in safe mode (dodging is what it concentrates on)
+static const int DASH_SAFE_CLOSE_CHANCE = 30;   // % per frame to dash away while Bob is within DASH_CLOSE_RANGE
+static const int DROID_COVER_STEP = 48;         // cover points are looked for in rings this far apart (pixels)...
+static const int DROID_COVER_RADIUS = 288;      // ...up to this far from the droid
+static const int DROID_COVER_DIRS = 12;         // points tested per ring
+static const int DROID_COVER_RECHECK = 15;      // frames between checks that the chosen cover is still hidden from Bob
+static const int DROID_COVER_RETRY = 30;        // frames to wait before searching again after finding nothing
+static const int DROID_COVER_STUCK_FRAMES = 45; // frames between the checks that it is getting closer to its cover
+static const int DROID_COVER_STUCK_MOVE = 3;    // moving less than this (pixels) between two checks = stuck, the spot is dropped
+static const int DROID_COVER_ARRIVE_DIST = 8;   // this close (pixels, x plus y) to the spot counts as arrived
+static const int DASH_TRIES_HIDDEN = 16;        // candidate spots tested per dash in safe mode (it looks for one Bob can't see)
+static const int DROID_AGGRO_BOB_HEALTH = 2;    // Bob with this much health or less (and in its sights) tempts it to shoot
+static const int DROID_AGGRO_CHANCE = 10;       // % per frame that it gives in to that temptation
+static const int DROID_AGGRO_BURST_RANGE = 200; // closer than this (pixels) it prefers a burst, farther a beam
+static const int DROID_AGGRO_PENALTY_FRAMES = MAX_FPS * 5; // a single shot from safe mode adds this to the recharge (up to DROID_RECHARGE_CAP)
+
 static unsigned int aiFrame = 0;        // frame counter, used for the attack turns
 static int attackCooldown = 0;          // frames until another enemy may start attacking
 static int lastPlayerReload = 0;        // used to notice when the player fires
@@ -97,6 +212,54 @@ static int lastPlayerReload = 0;        // used to notice when the player fires
 static EnemyAIState &getAIState(Entity *enemy)
 {
 	return aiState[enemy];
+}
+
+static bool isUtilityDroid(Entity *enemy)
+{
+	return (strcmp(enemy->name, UTILITY_DROID_NAME) == 0);
+}
+
+// Gives a freshly spawned utility droid its full shield and dash pool
+static void initUtilityDroid(Entity *enemy, EnemyAIState &st)
+{
+	if (!isUtilityDroid(enemy))
+		return;
+
+	st.utilityDroid = true;
+	st.shield = st.maxShield = DROID_SHIELD_POINTS;
+	st.dashes = DROID_MAX_DASHES;
+	st.rechargeTimer = 0;
+	st.stagger = 0;
+	st.safeMode = false;
+	st.dashCooldown = 0;
+	st.dashReact = false;
+	st.staggerImmune = 0;
+}
+
+// The shield broke or the dash pool ran dry: safe mode. Weapons off (droidSafeAggression is the one exception),
+// crawling, dodging with whatever is left of the dash pool, looking for cover. The 10 s recharge counts from here.
+static void enterDroidSafeMode(EnemyAIState &ai)
+{
+	if (ai.safeMode)
+		return;
+
+	ai.safeMode = true;
+	ai.rechargeTimer = DROID_RECHARGE_FRAMES;
+
+	// whatever it was winding up or firing is cancelled
+	ai.telegraph = 0;
+	ai.fireNow = false;
+	ai.charging = false;
+	ai.burstLeft = 0;
+	ai.volleyTotal = 0;
+	ai.volleyIndex = 0;
+	ai.beamTimer = 0;
+
+	ai.hasCover = false;
+	ai.coverRetry = 0;
+	ai.coverCheck = 0;
+	ai.coverTimer = 0;
+	ai.hasBadCover = false;
 }
 
 // Get preferred distance from player based on weapon type
@@ -185,7 +348,46 @@ static bool isGrenadeSafe(Entity *enemy)
 }
 
 // Check if there's a player grenade nearby and move away from it
-static bool avoidPlayerGrenade(Entity *enemy)
+// Movement priorities. When several rules want to move an enemy in the same frame
+// the highest priority wins; on a tie the rule asked last wins. The base destinations
+// (last seen point, confusion, getting unstuck) are written straight to tx earlier in
+// doAI(), so any proposal below beats them.
+static const int MOVE_PRIO_SEARCH = 0;     // sweep the area around the last known position
+static const int MOVE_PRIO_DISTANCE = 1;   // hold, approach or back off to the preferred distance
+static const int MOVE_PRIO_SQUAD = 2;      // reserved for the squad post (not used yet)
+static const int MOVE_PRIO_COVER = 2;      // safe mode: go to cover (shares the slot of the unused squad post)
+static const int MOVE_PRIO_SEPARATION = 3; // don't stack on other enemies
+static const int MOVE_PRIO_GRENADE = 4;    // get away from a grenade (survival)
+
+// Active search: after losing sight of the player, an enemy that reaches the last known
+// position sweeps the area around it (one side, then the other) until it calms down.
+static const int SEARCH_ARRIVE_DIST = 40;     // close enough to the last known position to start sweeping
+static const int SEARCH_POINT_TOLERANCE = 8;  // close enough to a sweep point to count as arrived
+static const int SEARCH_MIN_OFFSET = 50;      // sweep points are this far from the last known position...
+static const int SEARCH_MAX_OFFSET = 150;     // ...up to this far
+static const int SEARCH_WAIT_MIN = 40;        // frames spent looking around at each point
+static const int SEARCH_WAIT_MAX = 80;
+
+struct MoveProposal
+{
+	bool has;
+	int prio;
+	int tx;
+
+	MoveProposal() : has(false), prio(0), tx(0) {}
+
+	void propose(int p, int x)
+	{
+		if ((!has) || (p >= prio))
+		{
+			has = true;
+			prio = p;
+			tx = x;
+		}
+	}
+};
+
+static bool avoidPlayerGrenade(Entity *enemy, MoveProposal &mv)
 {
 	Entity *bullet = (Entity*)map.bulletList.getHead();
 	int grenadeRadius = 50;
@@ -210,9 +412,9 @@ static bool avoidPlayerGrenade(Entity *enemy)
 		{
 			// Move away from the grenade
 			if (bullet->x < enemy->x)
-				enemy->tx = (int)(enemy->x + 100);
+				mv.propose(MOVE_PRIO_GRENADE, (int)(enemy->x + 100));
 			else
-				enemy->tx = (int)(enemy->x - 100);
+				mv.propose(MOVE_PRIO_GRENADE, (int)(enemy->x - 100));
 
 			return true; // avoiding a grenade
 		}
@@ -277,8 +479,8 @@ static bool isEnemyOnScreen(Entity *enemy)
 	int sx = (int)(enemy->x - engine.playerPosX);
 	int sy = (int)(enemy->y - engine.playerPosY);
 
-	return (sx > -(enemy->width + margin)) && (sx < (graphics.screen->w + margin)) &&
-	       (sy > -(enemy->height + margin)) && (sy < (graphics.screen->h + margin));
+	return (sx > -(enemy->width + margin)) && (sx < (graphics.logicalW() + margin)) &&
+	       (sy > -(enemy->height + margin)) && (sy < (graphics.logicalH() + margin));
 }
 
 // Tiny pixel-art glyphs for the awareness icons
@@ -517,7 +719,9 @@ static Entity *spawnEnemyEntity(const char *name, int x, int y, int flags)
 
 	enemy->flags |= flags;
 
-	getAIState(enemy).maxHealth = enemy->health;
+	EnemyAIState &spawnState = getAIState(enemy);
+	spawnState.maxHealth = enemy->health;
+	initUtilityDroid(enemy, spawnState);
 	
 	enemy->reload = 120; // Wait about seconds seconds before attacking
 
@@ -717,11 +921,10 @@ void addEnemy(const char *name, int x, int y, int flags)
 	}
 }
 
-bool hasClearShot(Entity *enemy)
+// Straight ray from the point (x, y) to Bob: false when a solid brick is in the way
+static bool clearShotFromPoint(float x, float y)
 {
 	int mx, my;
-	float x = enemy->x + (enemy->width / 2);
-	float y = enemy->y + (enemy->height / 2);
 	float dx, dy;
 
 	Math::calculateSlope(player.x + (player.width / 2), player.y + (player.height / 2), x, y, &dx, &dy);
@@ -756,6 +959,11 @@ bool hasClearShot(Entity *enemy)
 	}
 
 	return true;
+}
+
+bool hasClearShot(Entity *enemy)
+{
+	return clearShotFromPoint(enemy->x + (enemy->width / 2), enemy->y + (enemy->height / 2));
 }
 
 // Vertical velocity to add to a straight shot so it heads towards the player.
@@ -895,6 +1103,109 @@ static void alertSquad(Entity *leader)
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Noise. Something loud happened at (x, y): enemies that can hear it go and
+// investigate. The range grows with the volume, shrinks for every solid tile in
+// the way, and the spot they head for is only approximate (worse when far away).
+// It never raises anyone above "?", and enemies that are already alert ignore it
+// (they know where the player is). Called from player.cpp and explosions.cpp.
+// ---------------------------------------------------------------------------
+static const float NOISE_VERTICAL_RATIO = 0.55f; // sound carries less across floors: vertical reach = volume * this
+static const float NOISE_WALL_PENALTY = 0.35f;   // each solid tile in the way adds this fraction to the distance
+static const int NOISE_MAX_WALLS = 6;
+static const int NOISE_ERROR_BASE = 24;          // the heard position is off by this many pixels...
+static const int NOISE_ERROR_DIVISOR = 6;        // ...plus distance / this
+
+static int countSolidTilesBetween(float x0, float y0, float x1, float y1)
+{
+	float dx = x1 - x0;
+	float dy = y1 - y0;
+	float length = sqrtf((dx * dx) + (dy * dy));
+	int steps = (int)(length / (BRICKSIZE / 2));
+
+	if (steps < 2)
+		return 0;
+
+	int count = 0;
+	int lastTX = -1000;
+	int lastTY = -1000;
+
+	for (int i = 1 ; i < steps ; i++)
+	{
+		float t = (float)i / steps;
+		int tileX = ((int)(x0 + (dx * t))) >> BRICKSHIFT;
+		int tileY = ((int)(y0 + (dy * t))) >> BRICKSHIFT;
+
+		if ((tileX == lastTX) && (tileY == lastTY))
+			continue;
+
+		lastTX = tileX;
+		lastTY = tileY;
+
+		if (map.isSolid(tileX, tileY))
+		{
+			if (++count >= NOISE_MAX_WALLS)
+				break;
+		}
+	}
+
+	return count;
+}
+
+void emitNoise(float x, float y, int volume)
+{
+	if ((volume <= 0) || (player.health <= -60) || (game.missionOverReason == MIS_COMPLETE))
+		return;
+
+	Entity *enemy = (Entity*)map.enemyList.getHead();
+
+	while (enemy->next != NULL)
+	{
+		enemy = (Entity*)enemy->next;
+
+		if ((enemy->health <= 0) || (enemy->owner != enemy))
+			continue;
+
+		if (enemy->flags & (ENT_BOSS|ENT_STATIC|ENT_GALDOV|ENT_NOMOVE|ENT_INANIMATE))
+			continue;
+
+		float ex = enemy->x + (enemy->width / 2);
+		float ey = enemy->y + (enemy->height / 2);
+		float dx = ex - x;
+		float dy = ey - y;
+		float dist = sqrtf((dx * dx) + (dy * dy));
+
+		if ((dist > volume) || (fabsf(dy) > (volume * NOISE_VERTICAL_RATIO)))
+			continue;
+
+		float effective = dist * (1.0f + (NOISE_WALL_PENALTY * countSolidTilesBetween(x, y, ex, ey)));
+
+		if (effective > volume)
+			continue;
+
+		EnemyAIState &st = getAIState(enemy);
+
+		if (st.awareness >= AWARE_ALERT)
+			continue;
+
+		// louder and closer = more suspicious, between "?" and what a gunshot does
+		float closeness = 1.0f - (effective / volume);
+		float level = AWARE_SUSPICIOUS + ((HEAR_LEVEL - AWARE_SUSPICIOUS) * closeness);
+
+		if (st.awareness < level)
+			st.awareness = level;
+
+		int error = NOISE_ERROR_BASE + ((int)dist / NOISE_ERROR_DIVISOR);
+
+		st.lastX = (int)x + Math::rrand(-error, error);
+		st.lastY = (int)y;
+		st.lostSight = 0;
+
+		enemy->tx = st.lastX;
+		enemy->ty = st.lastY;
+	}
+}
+
 // Attack turns: only a few enemies may be attacking at the same time, and
 // they can't all start on the same frame. Harder difficulty = more at once.
 static int getMaxAttackers()
@@ -960,6 +1271,337 @@ static int getBurstSize(Entity *enemy)
 	return size;
 }
 
+// ---- DROID LASER BEGIN ----
+static bool isDroidLaser(Entity *enemy)
+{
+	return (enemy->currentWeapon == &weapon[WEAPON_DROID_LASER]);
+}
+
+static int pickLaserMode()
+{
+	int roll = Math::prand() % 100;
+	int beamChance = LASER_BEAM_BASE_CHANCE + (game.skill * LASER_BEAM_SKILL_CHANCE);
+	int sweepChance = LASER_SWEEP_BASE_CHANCE + (game.skill * LASER_SWEEP_SKILL_CHANCE);
+
+	if (roll < beamChance)
+		return LASER_MODE_BEAM;
+
+	if (roll < (beamChance + sweepChance))
+		return LASER_MODE_SWEEP;
+
+	if (roll < (beamChance + sweepChance + LASER_BURST_CHANCE))
+		return LASER_MODE_BURST;
+
+	return LASER_MODE_SINGLE;
+}
+
+// Chooses a mode with a bit of tactical sense: near = burst, medium = sweep, far = beam if it has enough energy.
+static int pickLaserModeForEnemy(Entity *enemy, EnemyAIState &st)
+{
+	if (st.energy < 2.0f)
+		return LASER_MODE_SINGLE;
+
+	float dx = fabsf((player.x + (player.width / 2)) - (enemy->x + (enemy->width / 2)));
+	float dy = fabsf((player.y + (player.height / 2)) - (enemy->y + (enemy->height / 2)));
+	float dist = sqrtf((dx * dx) + (dy * dy));
+
+	if (dist < 200.0f)
+		return (st.energy >= 3.0f) ? LASER_MODE_BURST : LASER_MODE_SINGLE;
+
+	if (dist > 440.0f)
+	{
+		if (st.energy >= LASER_BEAM_CLIP_COST + 1.0f)
+			return (Math::prand() % 100 < 60) ? LASER_MODE_BEAM : LASER_MODE_SWEEP;
+
+		return LASER_MODE_SWEEP;
+	}
+
+	if (st.energy >= 4.0f)
+		return LASER_MODE_SWEEP;
+
+	return (st.energy >= 3.0f) ? LASER_MODE_BURST : LASER_MODE_SINGLE;
+}
+
+// Full magazine and a first preferred mode the first time a droid needs them
+static void ensureDroidLaser(Entity *enemy, EnemyAIState &st)
+{
+	if (st.maxEnergy > 0.0f)
+		return;
+
+	st.maxEnergy = LASER_CLIP_SIZE;
+	st.energy = st.maxEnergy;
+	st.laserMode = pickLaserModeForEnemy(enemy, st);
+}
+
+// Half width (radians) of the arc the beam sweeps: it covers LASER_BEAM_HALF_WIDTH pixels around the player at any distance
+static float getBeamHalfAngle(Entity *enemy)
+{
+	float dx = (player.x + (player.width / 2)) - (enemy->x + (enemy->width / 2));
+	float dy = (player.y + (player.height / 2)) - (enemy->y + (enemy->height / 2));
+	float dist = sqrtf((dx * dx) + (dy * dy));
+
+	if (dist < 1.0f)
+		dist = 1.0f;
+
+	float half = atan2f(LASER_BEAM_HALF_WIDTH, dist) * (180.0f / 3.14159265f);
+
+	if (half < LASER_BEAM_MIN_ANGLE)
+		half = LASER_BEAM_MIN_ANGLE;
+
+	if (half > LASER_BEAM_MAX_ANGLE)
+		half = LASER_BEAM_MAX_ANGLE;
+
+	return half * (3.14159265f / 180.0f);
+}
+
+// Starts a beam. It begins to one side of the player and turns across him, so there is time to get out of the way.
+// Its direction is fixed when it starts (it does not follow the player); only its origin follows the droid.
+static void startDroidBeam(Entity *enemy, EnemyAIState &st)
+{
+	float dx = (player.x + (player.width / 2)) - (enemy->x + (enemy->width / 2));
+	float dy = (player.y + (player.height / 2)) - (enemy->y + (enemy->height / 2));
+	float half = getBeamHalfAngle(enemy);
+
+	st.beamDir = ((Math::prand() % 2) == 0) ? 1 : -1;
+	st.beamTotal = LASER_BEAM_FRAMES;
+	st.beamTimer = LASER_BEAM_FRAMES;
+	st.beamTick = 0;
+	st.beamAngle = atan2f(dy, dx) - (st.beamDir * half);
+	st.beamStep = (st.beamDir * 2.0f * half) / LASER_BEAM_FRAMES;
+	st.beamLen = 0.0f;
+
+	// no other shot until the beam is over (shots are blocked while enemy->reload > 0)
+	enemy->reload = LASER_BEAM_FRAMES + BURST_PAUSE;
+
+	if (enemy->currentWeapon->fireSound > -1)
+		audio.playSound(enemy->currentWeapon->fireSound, CH_ANY, enemy->x);
+}
+
+// One frame of a beam: turns it, finds where it ends (the first wall, or the player) and, while it touches the player,
+// hurts him every LASER_BEAM_TICK frames. Called every frame for every active enemy; does nothing unless a beam is on.
+static void updateDroidBeam(Entity *enemy, EnemyAIState &st)
+{
+	if (st.beamTimer <= 0)
+		return;
+
+	// a dead, stunned or confused droid, or a dead player: the beam goes out
+	if ((enemy->health <= 0) || (st.stagger > 0) || (st.confused > 0) || (player.health <= 0))
+	{
+		st.beamTimer = 0;
+		return;
+	}
+
+	st.beamTimer--;
+	st.beamAngle += st.beamStep;
+
+	if (st.beamTick > 0)
+		st.beamTick--;
+
+	float ox = enemy->x + (enemy->width / 2.0f);
+	float oy = enemy->y + (enemy->height / 2.0f);
+	float dirX = cosf(st.beamAngle);
+	float dirY = sinf(st.beamAngle);
+	float len = 0.0f;
+	bool hitPlayer = false;
+
+	while (len < LASER_BEAM_RANGE)
+	{
+		float next = len + LASER_BEAM_STEP;
+		float tx = ox + (dirX * next);
+		float ty = oy + (dirY * next);
+
+		// walls (and the edges of the map) stop it
+		if ((tx < 0) || (ty < 0))
+			break;
+
+		int bx = (int)tx >> BRICKSHIFT;
+		int by = (int)ty >> BRICKSHIFT;
+
+		if ((bx >= MAPWIDTH) || (by >= MAPHEIGHT) || map.isSolid(bx, by))
+			break;
+
+		len = next;
+
+		// the player stops it too
+		if ((tx >= player.x) && (tx < (player.x + player.width)) && (ty >= player.y) && (ty < (player.y + player.height)))
+		{
+			hitPlayer = true;
+			break;
+		}
+	}
+
+	st.beamLen = len;
+
+	float endX = ox + (dirX * len);
+	float endY = oy + (dirY * len);
+
+	if (hitPlayer && (st.beamTick <= 0))
+	{
+		addDroidBeamHit(enemy, endX, endY, LASER_BEAM_DAMAGE);
+		st.beamTick = LASER_BEAM_TICK;
+	}
+
+	// sparks where the beam ends (on a wall or on Bob)
+	if ((aiFrame % 2) == 0)
+	{
+		for (int i = 0 ; i < 2 ; i++)
+		{
+			float sx = Math::rrand(-20, 20); sx /= 10;
+			float sy = Math::rrand(-20, 20); sy /= 10;
+			map.addParticle(endX, endY, sx, sy, Math::rrand(5, 15), (i == 0) ? graphics.red : graphics.white, NULL, 0);
+		}
+	}
+
+	// no looping sound exists: repeat the laser sound at the rate of the hits
+	if (((st.beamTimer % LASER_BEAM_TICK) == 0) && (enemy->currentWeapon->fireSound > -1))
+		audio.playSound(enemy->currentWeapon->fireSound, CH_ANY, enemy->x);
+}
+
+// Angle (degrees) of the next bullet of a sweep: the fan goes from one side of the player to the other
+static float getSweepAngle(Entity *enemy, EnemyAIState &st)
+{
+	if (st.volleyTotal <= 1)
+		return 0.0f;
+
+	float dx = (player.x + (player.width / 2)) - (enemy->x + (enemy->width / 2));
+	float dy = (player.y + (player.height / 2)) - (enemy->y + (enemy->height / 2));
+	float dist = sqrtf((dx * dx) + (dy * dy));
+
+	if (dist < 1.0f)
+		dist = 1.0f;
+
+	float half = atan2f(LASER_SWEEP_HALF_WIDTH, dist) * (180.0f / 3.14159265f);
+
+	if (half < LASER_SWEEP_MIN_ANGLE)
+		half = LASER_SWEEP_MIN_ANGLE;
+
+	if (half > LASER_SWEEP_MAX_ANGLE)
+		half = LASER_SWEEP_MAX_ANGLE;
+
+	float t = (float)st.volleyIndex / (float)(st.volleyTotal - 1);
+
+	return st.sweepDir * (-half + (2.0f * half * t));
+}
+
+// Fires the droid's current volley, one bullet per call (single shot, burst, sweep), or starts a beam.
+// Spends the magazine and starts the reload when it runs dry. A new volley starts when the previous one is over.
+static void fireDroidLaser(Entity *enemy, EnemyAIState &st, bool continuing, float aimDY)
+{
+	ensureDroidLaser(enemy, st);
+
+	bool newVolley = ((!continuing) || (st.volleyTotal <= 0));
+
+	// The beam is not a volley of bullets: it starts here and then runs on its own (updateDroidBeam).
+	// If the current mode would need more charge than the droid has, it can still fall back to the beam.
+	if (newVolley && (st.laserMode == LASER_MODE_BEAM) && (st.energy >= LASER_BEAM_CLIP_COST))
+	{
+		startDroidBeam(enemy, st);
+
+		st.energy -= LASER_BEAM_CLIP_COST;
+		st.burstLeft = 0;
+		st.volleyTotal = 0;
+	}
+	else
+	{
+		if (newVolley)
+		{
+			int shots = 1;
+
+			if (st.laserMode == LASER_MODE_BURST)
+				shots = getBurstSize(enemy);
+			else if (st.laserMode == LASER_MODE_SWEEP)
+				shots = LASER_SWEEP_SHOTS + game.skill;
+
+			if (st.energy < 1.0f)
+			{
+				if ((st.energy >= LASER_BEAM_CLIP_COST) && (st.laserMode != LASER_MODE_BEAM))
+				{
+					st.laserMode = LASER_MODE_BEAM;
+					startDroidBeam(enemy, st);
+					st.energy -= LASER_BEAM_CLIP_COST;
+					st.burstLeft = 0;
+					st.volleyTotal = 0;
+					return;
+				}
+
+				st.energy = st.maxEnergy;
+				st.laserMode = pickLaserMode();
+				enemy->reload = std::max(enemy->reload, LASER_RELOAD_FRAMES - (game.skill * LASER_RELOAD_SKILL_CUT));
+				return;
+			}
+
+			if ((float)shots > st.energy)
+			{
+				if ((st.energy >= LASER_BEAM_CLIP_COST) && (st.laserMode != LASER_MODE_BEAM))
+				{
+					st.laserMode = LASER_MODE_BEAM;
+					startDroidBeam(enemy, st);
+					st.energy -= LASER_BEAM_CLIP_COST;
+					st.burstLeft = 0;
+					st.volleyTotal = 0;
+					return;
+				}
+
+				shots = 1;
+			}
+
+			if (shots < 1)
+				shots = 1;
+
+			st.volleyMode = st.laserMode;
+
+			// a sweep cut short by the energy is just a burst
+			if ((st.volleyMode == LASER_MODE_SWEEP) && (shots < 3))
+				st.volleyMode = LASER_MODE_BURST;
+
+			st.volleyTotal = shots;
+			st.volleyIndex = 0;
+			st.sweepDir = ((Math::prand() % 2) == 0) ? 1 : -1;
+			st.burstLeft = shots;
+			st.burstTimeout = 120;
+		}
+
+		if (st.volleyMode == LASER_MODE_SWEEP)
+		{
+			addEnemyAimedShot(enemy, getSweepAngle(enemy, st));
+			enemy->reload = LASER_SWEEP_GAP;
+		}
+		else
+		{
+			addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), aimDY);
+		}
+
+		st.energy -= 1.0f;
+		st.volleyIndex++;
+		st.burstLeft--;
+
+		if (st.burstLeft <= 0)
+		{
+			// volley over: rest a little after anything longer than a single shot
+			if (st.volleyIndex > 1)
+				enemy->reload += BURST_PAUSE;
+
+			st.burstLeft = 0;
+			st.volleyTotal = 0;
+		}
+	}
+
+	// empty magazine: reload (shots are blocked while enemy->reload > 0) and pick a new preferred mode
+	if (st.energy <= 0.0f)
+	{
+		int reloadFrames = LASER_RELOAD_FRAMES - (game.skill * LASER_RELOAD_SKILL_CUT);
+
+		if (enemy->reload < reloadFrames)
+			enemy->reload = reloadFrames;
+
+		st.energy = st.maxEnergy;
+		st.laserMode = pickLaserModeForEnemy(enemy, st);
+		st.burstLeft = 0;
+		st.volleyTotal = 0;
+	}
+}
+// ---- DROID LASER END ----
+
 // Called once per frame for every free enemy: notices the player gradually,
 // remembers where they were last seen and heads there.
 static void senseSurroundings(Entity *enemy, EnemyAIState &ai)
@@ -1017,6 +1659,14 @@ static void senseSurroundings(Entity *enemy, EnemyAIState &ai)
 		ai.lostSight = 0;
 		ai.lastX = (int)player.x;
 		ai.lastY = (int)player.y;
+
+		// remember which way the player was heading (used to decide where to search first)
+		if (player.dx > 0)
+			ai.lastDir = 1;
+		else if (player.dx < 0)
+			ai.lastDir = -1;
+		else
+			ai.lastDir = (player.face == 0) ? 1 : -1;
 	}
 	else
 	{
@@ -1054,6 +1704,36 @@ static void senseSurroundings(Entity *enemy, EnemyAIState &ai)
 		enemy->tx = ai.lastX;
 		enemy->ty = ai.lastY;
 	}
+}
+
+// Safe mode: weapons are off, except that a weak Bob in plain sight tempts the droid to risk a shot.
+// What it fires is up to it: a single shot when the magazine is nearly empty, otherwise a burst up
+// close or a sweep/beam from afar. Returns true when it gives in (the penalty is applied when it fires).
+static bool droidSafeAggression(Entity *enemy, EnemyAIState &st, bool canSee)
+{
+	if ((!canSee) || (player.health <= 0) || (player.health > DROID_AGGRO_BOB_HEALTH))
+		return false;
+
+	if ((int)(Math::prand() % 100) >= DROID_AGGRO_CHANCE)
+		return false;
+
+	if (isDroidLaser(enemy))
+	{
+		ensureDroidLaser(enemy, st);
+		st.laserMode = pickLaserModeForEnemy(enemy, st);
+	}
+
+	return true;
+}
+
+// Shooting from safe mode costs recharge time: a single shot adds DROID_AGGRO_PENALTY_FRAMES to what
+// is left (never past the 10 s cap); a burst, sweep or beam puts the countdown back to the full 10 s.
+static void applyDroidAggressionPenalty(EnemyAIState &st, bool heavy)
+{
+	if (heavy)
+		st.rechargeTimer = DROID_RECHARGE_CAP;
+	else
+		st.rechargeTimer = std::min(DROID_RECHARGE_CAP, st.rechargeTimer + DROID_AGGRO_PENALTY_FRAMES);
 }
 
 void lookForPlayer(Entity *enemy)
@@ -1138,7 +1818,7 @@ void lookForPlayer(Entity *enemy)
 			bool fromWindup = st.fireNow;
 			bool continuing = (st.burstLeft > 0);
 
-			if (enemy->flags & ENT_ALWAYSFIRES)
+			if ((enemy->flags & ENT_ALWAYSFIRES) && (!st.safeMode)) // safe mode: weapons off
 			{
 				shoot = true;
 			}
@@ -1150,7 +1830,7 @@ void lookForPlayer(Entity *enemy)
 			{
 				shoot = true;
 			}
-			else if (isLeader ? ((Math::prand() % 100) < (4 + (game.skill * 3))) : ((Math::prand() % 850) <= (game.skill * 5)))
+			else if (st.safeMode ? droidSafeAggression(enemy, st, canSee) : (isLeader ? ((Math::prand() % 100) < (4 + (game.skill * 3))) : ((Math::prand() % 850) <= (game.skill * 5))))
 			{
 				// wait for our turn to attack
 				if (canStartAttack())
@@ -1181,6 +1861,17 @@ void lookForPlayer(Entity *enemy)
 								}
 							}
 
+							// a droid about to fire a sweep or beam warns a bit longer
+							if (isDroidLaser(enemy))
+							{
+								ensureDroidLaser(enemy, st);
+
+								if (st.laserMode == LASER_MODE_SWEEP)
+									st.telegraph += LASER_SWEEP_WARNING;
+								else if (st.laserMode == LASER_MODE_BEAM)
+									st.telegraph += LASER_BEAM_WARNING;
+							}
+
 							st.telegraphTotal = st.telegraph;
 						}
 						else
@@ -1194,6 +1885,20 @@ void lookForPlayer(Entity *enemy)
 			if (shoot)
 			{
 				st.fireNow = false;
+
+				// Eye Droid laser: magazine, reload and firing modes. These droids fly, so nothing below applies to them
+				if (isDroidLaser(enemy) && (!(enemy->flags & ENT_ALWAYSFIRES)))
+				{
+					// a volley fired from safe mode puts the recharge back (burst / sweep / beam) or extends it (single shot)
+					if (st.safeMode && ((!continuing) || (st.volleyTotal <= 0)))
+					{
+						ensureDroidLaser(enemy, st);
+						applyDroidAggressionPenalty(st, (st.laserMode != LASER_MODE_SINGLE));
+					}
+
+					fireDroidLaser(enemy, st, continuing, aimDY);
+					return;
+				}
 
 				// Don't fire grenades if it would hurt self or allies
 				bool grenadeThrown = false;
@@ -1238,6 +1943,9 @@ void lookForPlayer(Entity *enemy)
 
 				if (!grenadeThrown)
 				{
+					if (st.safeMode && (!continuing))
+						applyDroidAggressionPenalty(st, false);
+
 					addBullet(enemy, enemy->currentWeapon->getSpeed(enemy->face), aimDY);
 					if (enemy->currentWeapon == &weapon[WP_ALIENSPREAD])
 					{
@@ -1300,8 +2008,8 @@ void lookForPlayer(Entity *enemy)
 		}
 	}
 
-	// just started the warning (or in the middle of a burst): don't jump away
-	if ((st.telegraph > 0) || (st.burstLeft > 0))
+	// just started the warning (or in the middle of a burst or a beam): don't jump away
+	if ((st.telegraph > 0) || (st.burstLeft > 0) || (st.beamTimer > 0))
 		return;
 
 	if ((enemy->flags & ENT_FLIES) || (enemy->flags & ENT_SWIMS) || (enemy->flags & ENT_NOJUMP))
@@ -1338,6 +2046,440 @@ void lookForPlayer(Entity *enemy)
 	}
 }
 
+// True when something solid or liquid lies below the box, all the way down to the map's bottom
+// edge. A spot over a bottomless gap (nothing to land on) is where a dash must never end up.
+static bool hasSomethingBelow(int px, int py, int w, int h)
+{
+	int x1 = px >> BRICKSHIFT;
+	int x2 = (px + w - 1) >> BRICKSHIFT;
+	int yStart = ((py + h - 1) >> BRICKSHIFT) + 1;
+
+	for (int ty = yStart ; ty < MAPHEIGHT ; ty++)
+	{
+		for (int tx = x1 ; tx <= x2 ; tx++)
+		{
+			if (map.isSolid(tx, ty) || map.isLiquid(tx, ty))
+				return true;
+		}
+	}
+
+	return false;
+}
+
+// True when the enemy box fits at (px, py): inside the map, nothing solid or liquid in it,
+// not below the level's bottom edge and not over a bottomless gap
+static bool isDashSpotFree(Entity *enemy, int px, int py)
+{
+	if ((px < 16) || (py < 16) || ((px + enemy->width) > ((MAPWIDTH * BRICKSIZE) - 16)) || ((py + enemy->height) > ((MAPHEIGHT * BRICKSIZE) - 16)))
+		return false;
+
+	// same bottom edge doGame uses to decide Bob fell out of the map (limitDown + 500)
+	if ((map.limitDown > 0) && ((py + enemy->height) > (map.limitDown + 500)))
+		return false;
+
+	int x1 = px >> BRICKSHIFT;
+	int x2 = (px + enemy->width - 1) >> BRICKSHIFT;
+	int y1 = py >> BRICKSHIFT;
+	int y2 = (py + enemy->height - 1) >> BRICKSHIFT;
+
+	for (int ty = y1 ; ty <= y2 ; ty++)
+	{
+		for (int tx = x1 ; tx <= x2 ; tx++)
+		{
+			if (map.isSolid(tx, ty) || map.isLiquid(tx, ty))
+				return false;
+		}
+	}
+
+	return hasSomethingBelow(px, py, enemy->width, enemy->height);
+}
+
+// Looks for a spot to teleport to. evade = prefer the one farthest from the player,
+// otherwise any valid spot (random, so the jumps are hard to predict)
+// line (optional) = {originX, originY, dirX, dirY, clearance}: a line of fire the spot must stay
+// clearance pixels away from; the spot farthest from that line wins.
+// preferHidden (safe mode) = a spot Bob can't see always beats one he can; among the same kind the usual score decides.
+static bool findDashSpot(Entity *enemy, bool evade, int *outX, int *outY, const float *line = NULL, bool preferHidden = false)
+{
+	bool found = false;
+	int bestScore = -1;
+	int tries = preferHidden ? DASH_TRIES_HIDDEN : DASH_TRIES;
+
+	for (int i = 0 ; i < tries ; i++)
+	{
+		int ox = Math::rrand(-DASH_MAX_RADIUS, DASH_MAX_RADIUS);
+		int oy = Math::rrand(-DASH_MAX_RADIUS, DASH_MAX_RADIUS);
+		int d2 = (ox * ox) + (oy * oy);
+
+		if ((d2 < (DASH_MIN_RADIUS * DASH_MIN_RADIUS)) || (d2 > (DASH_MAX_RADIUS * DASH_MAX_RADIUS)))
+			continue;
+
+		int px = (int)enemy->x + ox;
+		int py = (int)enemy->y + oy;
+
+		if (!isDashSpotFree(enemy, px, py))
+			continue;
+
+		float lineDist = 0.0f;
+
+		if (line != NULL)
+		{
+			float cx = (px + (enemy->width / 2.0f)) - line[0];
+			float cy = (py + (enemy->height / 2.0f)) - line[1];
+
+			lineDist = fabsf((cx * line[3]) - (cy * line[2]));
+
+			if (lineDist < line[4])
+				continue;
+		}
+
+		int score = (int)(Math::prand() % 1000);
+
+		if (line != NULL)
+		{
+			score = (int)lineDist;
+		}
+		else if (evade)
+		{
+			int bx = px - (int)player.x;
+			int by = py - (int)player.y;
+			score = (bx * bx) + (by * by);
+		}
+
+		if (preferHidden && (!clearShotFromPoint(px + (enemy->width / 2.0f), py + (enemy->height / 2.0f))))
+			score += 1000000;
+
+		if (score > bestScore)
+		{
+			bestScore = score;
+			*outX = px;
+			*outY = py;
+			found = true;
+		}
+	}
+
+	return found;
+}
+
+// True when the straight line between two points crosses no solid brick (the droid can fly it)
+static bool isFlightPathClear(float x0, float y0, float x1, float y1)
+{
+	float dx = x1 - x0;
+	float dy = y1 - y0;
+	int steps = (int)(sqrtf((dx * dx) + (dy * dy)) / 8.0f) + 1;
+
+	for (int i = 1 ; i <= steps ; i++)
+	{
+		float t = (float)i / (float)steps;
+		int mx = (int)(x0 + (dx * t)) >> BRICKSHIFT;
+		int my = (int)(y0 + (dy * t)) >> BRICKSHIFT;
+
+		if ((mx < 0) || (my < 0) || (mx >= MAPWIDTH) || (my >= MAPHEIGHT) || map.isSolid(mx, my))
+			return false;
+	}
+
+	return true;
+}
+
+// Cover: the nearest free spot (rings of growing radius around the droid) from which a ray to Bob
+// hits a wall (no hasClearShot) and that the droid can reach in a straight line.
+static bool findCoverSpot(Entity *enemy, const EnemyAIState &ai, int *outX, int *outY)
+{
+	float fromX = enemy->x + (enemy->width / 2.0f);
+	float fromY = enemy->y + (enemy->height / 2.0f);
+	int first = (int)(Math::prand() % DROID_COVER_DIRS); // where each ring starts, so it doesn't always prefer one side
+
+	for (int r = DROID_COVER_STEP ; r <= DROID_COVER_RADIUS ; r += DROID_COVER_STEP)
+	{
+		for (int i = 0 ; i < DROID_COVER_DIRS ; i++)
+		{
+			float angle = (6.2831853f * (float)((first + i) % DROID_COVER_DIRS)) / (float)DROID_COVER_DIRS;
+			int px = (int)enemy->x + (int)(cosf(angle) * r);
+			int py = (int)enemy->y + (int)(sinf(angle) * r);
+
+			if (!isDashSpotFree(enemy, px, py))
+				continue;
+
+			// the spot it got stuck on the way to (and its surroundings) is not tried again
+			if (ai.hasBadCover && (abs(px - ai.badCoverX) < DROID_COVER_STEP) && (abs(py - ai.badCoverY) < DROID_COVER_STEP))
+				continue;
+
+			float cx = px + (enemy->width / 2.0f);
+			float cy = py + (enemy->height / 2.0f);
+
+			if (clearShotFromPoint(cx, cy))
+				continue;
+
+			if (!isFlightPathClear(fromX, fromY, cx, cy))
+				continue;
+
+			*outX = px;
+			*outY = py;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// Safe mode: keeps track of where the droid should hide. Already out of Bob's sight = stay where it is.
+static void updateDroidCover(Entity *enemy, EnemyAIState &ai)
+{
+	if ((!ai.utilityDroid) || (!ai.safeMode) || (enemy->health <= 0))
+		return;
+
+	if (ai.coverRetry > 0)
+		ai.coverRetry--;
+
+	if (ai.coverCheck > 0)
+		ai.coverCheck--;
+
+	if (!clearShotFromPoint(enemy->x + (enemy->width / 2.0f), enemy->y + (enemy->height / 2.0f)))
+	{
+		ai.hasCover = true;
+		ai.coverX = (int)enemy->x;
+		ai.coverY = (int)enemy->y;
+		ai.coverCheck = 0; // the moment Bob moves and it is seen again, the spot is checked at once
+		return;
+	}
+
+	// heading for cover but not getting any closer (a wall in the way): drop that spot and look for another
+	if (ai.hasCover && ((abs((int)enemy->x - ai.coverX) + abs((int)enemy->y - ai.coverY)) > DROID_COVER_ARRIVE_DIST))
+	{
+		if (--ai.coverTimer <= 0)
+		{
+			ai.coverTimer = DROID_COVER_STUCK_FRAMES;
+
+			if ((abs((int)enemy->x - ai.snapX) + abs((int)enemy->y - ai.snapY)) < DROID_COVER_STUCK_MOVE)
+			{
+				ai.hasBadCover = true;
+				ai.badCoverX = ai.coverX;
+				ai.badCoverY = ai.coverY;
+				ai.hasCover = false;
+				ai.coverRetry = 0;
+			}
+
+			ai.snapX = (int)enemy->x;
+			ai.snapY = (int)enemy->y;
+		}
+	}
+
+	// seen: the spot it was heading for may be stale now that Bob moved
+	if (ai.hasCover && (ai.coverCheck <= 0))
+	{
+		ai.coverCheck = DROID_COVER_RECHECK;
+
+		if (clearShotFromPoint(ai.coverX + (enemy->width / 2.0f), ai.coverY + (enemy->height / 2.0f)))
+			ai.hasCover = false;
+	}
+
+	if ((!ai.hasCover) && (ai.coverRetry <= 0))
+	{
+		int nx, ny;
+
+		if (findCoverSpot(enemy, ai, &nx, &ny))
+		{
+			ai.hasCover = true;
+			ai.coverX = nx;
+			ai.coverY = ny;
+			ai.coverCheck = DROID_COVER_RECHECK;
+			ai.coverTimer = DROID_COVER_STUCK_FRAMES;
+			ai.snapX = (int)enemy->x;
+			ai.snapY = (int)enemy->y;
+		}
+		else
+		{
+			ai.coverRetry = DROID_COVER_RETRY;
+		}
+	}
+}
+
+static void addDroidDebris(Entity *enemy, int count, float speed); // defined below
+
+// The jump itself: instant x/y change, silent (no sound, no travel animation). Costs one dash
+// from the pool and DASH_SHIELD_COST shield points.
+static void performDroidDash(Entity *enemy, EnemyAIState &ai, int nx, int ny)
+{
+	enemy->x = nx;
+	enemy->y = ny;
+	ai.dashes--;
+
+	// in safe mode the shield is already down: the jump runs on the dash pool alone
+	if (ai.shield > 0)
+	{
+		ai.shield -= DASH_SHIELD_COST;   // the jump drains the shield
+
+		if (ai.shield <= 0)
+		{
+			ai.shield = 0;
+			addDroidDebris(enemy, 18, 3.0f); // drained dry: the shield collapses like a broken one
+			enterDroidSafeMode(ai);
+		}
+	}
+
+	// the last dash of the pool: it is out of tricks, safe mode starts (shield or not)
+	if (ai.dashes <= 0)
+		enterDroidSafeMode(ai);
+
+	ai.dashCooldown = ai.safeMode ? DASH_SAFE_COOLDOWN : DASH_COOLDOWN;
+	ai.prevX = nx;   // a jump is not "being stuck"
+	ai.stuck = 0;
+}
+
+// Utility droid dashes: an instant change of x and y, no travel animation.
+// The pool (DROID_MAX_DASHES) holds 3 dashes. Each dash costs 1 shield point, so a dash needs
+// a live shield. The pool refills together with the shield (updateDroidShield).
+static void updateDroidDash(Entity *enemy, EnemyAIState &ai)
+{
+	if (!ai.utilityDroid)
+		return;
+
+	if (ai.dashCooldown > 0)
+		ai.dashCooldown--;
+
+	bool react = ai.dashReact;
+	ai.dashReact = false;
+
+	// without a shield the pool is only usable in safe mode (dodging is all it has left)
+	bool shieldOk = (ai.shield > 0) || ai.safeMode;
+
+	if ((enemy->health <= 0) || (player.health <= 0) || (ai.dashes <= 0) || (!shieldOk) || (ai.dashCooldown > 0) || (ai.stagger > 0) || (ai.confused > 0))
+		return;
+
+	bool want = false;
+	bool evade = false;
+
+	if (react)
+	{
+		want = ((int)(Math::prand() % 100) < DASH_HIT_CHANCE);
+	}
+	else if ((ai.alerted || ai.safeMode) && ai.canSee)
+	{
+		int dx = (int)(player.x - enemy->x);
+		int dy = (int)(player.y - enemy->y);
+
+		if ((((dx * dx) + (dy * dy)) < (DASH_CLOSE_RANGE * DASH_CLOSE_RANGE)) && ((int)(Math::prand() % 100) < (ai.safeMode ? DASH_SAFE_CLOSE_CHANCE : DASH_CLOSE_CHANCE)))
+		{
+			want = true;
+			evade = true;
+		}
+		else if ((!ai.safeMode) && ((int)(Math::prand() % 1000) < DASH_IDLE_PERMILLE)) // safe mode keeps the pool for dodging
+		{
+			want = true;
+		}
+	}
+
+	if (!want)
+		return;
+
+	int nx, ny;
+
+	if (!findDashSpot(enemy, evade, &nx, &ny, NULL, ai.safeMode))
+		return;
+
+	performDroidDash(enemy, ai, nx, ny);
+}
+
+// Called from addBullet() (bullets.cpp) at the instant the player fires a straight shot.
+// originX/Y = where the shot leaves Bob, dirX/Y = its direction. A utility droid standing in
+// that line (having detected Bob, with a clear shot, in range, dash ready and shield up) dashes right away, to a spot
+// that is NOT on the line of fire. Bullets already in the air are never looked at.
+void notifyPlayerShot(float originX, float originY, float dirX, float dirY)
+{
+	float len = sqrtf((dirX * dirX) + (dirY * dirY));
+
+	if ((len < 0.01f) || (player.health <= 0))
+		return;
+
+	dirX /= len;
+	dirY /= len;
+
+	Entity *enemy = (Entity*)map.enemyList.getHead();
+
+	while (enemy->next != NULL)
+	{
+		enemy = (Entity*)enemy->next;
+
+		if (enemy->health <= 0)
+			continue;
+
+		std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+		if ((it == aiState.end()) || (!it->second.utilityDroid))
+			continue;
+
+		EnemyAIState &ai = it->second;
+
+		// a droid that has not noticed Bob (no "!" yet) is not expecting the shot: it doesn't dodge
+		if ((ai.awareness < AWARE_ALERT) && (!ai.safeMode)) // in safe mode it is watching Bob closely
+			continue;
+
+		if ((ai.dashes <= 0) || ((ai.shield <= 0) && (!ai.safeMode)) || (ai.dashCooldown > 0) || (ai.stagger > 0) || (ai.confused > 0))
+			continue;
+
+		float ex = (enemy->x + (enemy->width / 2.0f)) - originX;
+		float ey = (enemy->y + (enemy->height / 2.0f)) - originY;
+		float along = (ex * dirX) + (ey * dirY);
+		float across = fabsf((ex * dirY) - (ey * dirX));
+		float reach = (((enemy->width > enemy->height) ? enemy->width : enemy->height) / 2.0f) + 6.0f;
+
+		if ((along <= 0.0f) || (along > DASH_DODGE_RANGE) || (across > reach))
+			continue;
+
+		if (!hasClearShot(enemy)) // a wall between them: the shot can't reach it anyway
+			continue;
+
+		if ((int)(Math::prand() % 100) >= DASH_DODGE_CHANCE)
+			continue;
+
+		float line[5] = {originX, originY, dirX, dirY, reach + DASH_DODGE_CLEARANCE};
+		int nx, ny;
+
+		if (!findDashSpot(enemy, false, &nx, &ny, line, ai.safeMode))
+			continue;
+
+		performDroidDash(enemy, ai, nx, ny);
+	}
+}
+
+// Utility droid recharge. A broken shield or an empty dash pool starts safe mode and its 10 s countdown.
+// Nothing comes back while it runs; when it ends the shield and the dash pool are both restored in full
+// and safe mode ends.
+static void updateDroidShield(Entity *enemy, EnemyAIState &ai)
+{
+	if ((!ai.utilityDroid) || (enemy->health <= 0))
+		return;
+
+	// safety net: whatever took the last shield point or the last dash, safe mode starts here (and its 10 s count from now)
+	if ((ai.shield <= 0) || (ai.dashes <= 0))
+		enterDroidSafeMode(ai);
+
+	if ((ai.shield > 0) && (ai.dashes > 0))
+	{
+		ai.rechargeTimer = 0;
+		return;
+	}
+
+	if (ai.rechargeTimer <= 0)
+		ai.rechargeTimer = DROID_RECHARGE_FRAMES; // shield down or no dashes left, and no countdown running: start it
+
+	if (--ai.rechargeTimer > 0)
+		return;
+
+	ai.shield = ai.maxShield;
+	ai.dashes = DROID_MAX_DASHES;
+	ai.safeMode = false;
+	ai.hasCover = false;
+
+	// small cyan burst so the player sees it come back
+	for (int i = 0 ; i < 12 ; i++)
+	{
+		float dx = Math::rrand(-20, 20); dx /= 10;
+		float dy = Math::rrand(-20, 20); dy /= 10;
+		map.addParticle(enemy->x + (enemy->width / 2), enemy->y + (enemy->height / 2), dx, dy, Math::rrand(15, 35), graphics.cyan, NULL, 0);
+	}
+}
+
 void doAI(Entity *enemy)
 {
 	EnemyAIState &ai = getAIState(enemy);
@@ -1369,7 +2511,7 @@ void doAI(Entity *enemy)
 		ai.grenadeTimer--;
 
 	// tell the attack turns system this enemy is busy
-	if ((ai.telegraph > 0) || (ai.burstLeft > 0))
+	if ((ai.telegraph > 0) || (ai.burstLeft > 0) || (ai.beamTimer > 0))
 		ai.attackStamp = aiFrame;
 
 	if (enemy->flags & ENT_GALDOV)
@@ -1392,6 +2534,15 @@ void doAI(Entity *enemy)
 
 	// notice the player (gradually) and head for where they were last seen
 	senseSurroundings(enemy, ai);
+
+	// utility droid: teleport dashes
+	updateDroidDash(enemy, ai);
+
+	// utility droid: shield comes back 10 s after it broke
+	updateDroidShield(enemy, ai);
+
+	// utility droid in safe mode: find (and keep) a spot Bob can't see
+	updateDroidCover(enemy, ai);
 
 	bool aware = (ai.awareness >= AWARE_SUSPICIOUS);
 
@@ -1418,11 +2569,64 @@ void doAI(Entity *enemy)
 		aware = true; // keep the destination instead of forgetting it
 	}
 
+	// Several rules want to move the enemy: each one proposes a destination with a
+	// priority and the highest wins (see MOVE_PRIO_*), instead of the last writer winning.
+	MoveProposal mv;
+
+	// Active search: it lost sight of the player. Once it reaches the last known position it
+	// sweeps the area around it (first the side the player was heading to, then the other)
+	// instead of standing still, until it calms down.
+	bool canSearch = aware && (!ai.canSee) && (ai.lostSight > 0) && (ai.confused == 0) &&
+		(!(enemy->flags & (ENT_FLIES|ENT_SWIMS|ENT_STATIC|ENT_NOMOVE|ENT_INANIMATE|ENT_GALDOV|ENT_BOSS)));
+
+	if (!canSearch)
+	{
+		ai.searching = false;
+	}
+	else
+	{
+		int here = (int)enemy->x;
+
+		if ((!ai.searching) && (abs(here - ai.lastX) <= SEARCH_ARRIVE_DIST))
+		{
+			ai.searching = true;
+			ai.searchX = here;
+			ai.searchDir = ai.lastDir;
+			ai.searchWait = Math::rrand(SEARCH_WAIT_MIN, SEARCH_WAIT_MAX);
+		}
+
+		if (ai.searching)
+		{
+			if (abs(here - ai.searchX) <= SEARCH_POINT_TOLERANCE)
+			{
+				if (ai.searchWait > 0)
+				{
+					ai.searchWait--;
+				}
+				else
+				{
+					if (ai.searchDir == 0)
+						ai.searchDir = ((Math::prand() % 2) == 0) ? 1 : -1;
+
+					ai.searchX = ai.lastX + (ai.searchDir * Math::rrand(SEARCH_MIN_OFFSET, SEARCH_MAX_OFFSET));
+					Math::limitInt(&ai.searchX, 15, (MAPWIDTH * BRICKSIZE) - 20);
+					ai.searchDir = -ai.searchDir;
+					ai.searchWait = Math::rrand(SEARCH_WAIT_MIN, SEARCH_WAIT_MAX);
+				}
+			}
+
+			mv.propose(MOVE_PRIO_SEARCH, ai.searchX);
+		}
+	}
+
 	// An aware enemy that can't get any closer (wall in the way) tries to jump
 	// it, and gives up after a while
 	int curX = (int)enemy->x;
 
-	if (aware && (enemy->tx != curX) && (!enemy->falling) && (ai.telegraph == 0) && (ai.burstLeft == 0) && (curX == ai.prevX))
+	// while sweeping, the goal is the sweep point (tx is reset to the last known position every frame)
+	int goalX = mv.has ? mv.tx : enemy->tx;
+
+	if (aware && (goalX != curX) && (!enemy->falling) && (ai.telegraph == 0) && (ai.burstLeft == 0) && (ai.beamTimer == 0) && (curX == ai.prevX))
 		ai.stuck++;
 	else
 		ai.stuck = 0;
@@ -1437,6 +2641,10 @@ void doAI(Entity *enemy)
 	else if (ai.stuck > 60)
 	{
 		enemy->tx = curX;
+
+		// a sweep point it can't reach: count it as reached so it moves on to the other side
+		if (ai.searching)
+			ai.searchX = curX;
 	}
 
 	// Calm enemies that stopped moving forget their destination. Aware ones
@@ -1445,7 +2653,7 @@ void doAI(Entity *enemy)
 		enemy->tx = (int)enemy->x;
 
 	// AVOID PLAYER'S GRENADES (highest priority - survival)
-	if (avoidPlayerGrenade(enemy))
+	if (avoidPlayerGrenade(enemy, mv))
 	{
 		// Grenade detected and moved away, skip distance preference
 		// Continue to ally grenade avoidance and separation
@@ -1463,19 +2671,19 @@ void doAI(Entity *enemy)
 			{
 				// Too close: move away from player
 				if (player.x < enemy->x)
-					enemy->tx = (int)(enemy->x + 100);
+					mv.propose(MOVE_PRIO_DISTANCE, (int)(enemy->x + 100));
 				else
-					enemy->tx = (int)(enemy->x - 100);
+					mv.propose(MOVE_PRIO_DISTANCE, (int)(enemy->x - 100));
 			}
 			else if (currentDist > (prefDist + 50))
 			{
 				// Too far: move toward player (already handled by ai.lastX/lastY)
-				enemy->tx = ai.lastX;
+				mv.propose(MOVE_PRIO_DISTANCE, ai.lastX);
 			}
 			else
 			{
 				// At preferred distance: hold position
-				enemy->tx = (int)enemy->x;
+				mv.propose(MOVE_PRIO_DISTANCE, (int)enemy->x);
 			}
 		}
 	}
@@ -1490,9 +2698,9 @@ void doAI(Entity *enemy)
 		{
 			// Move away from grenade position
 			if (ai.grenadeX < enemy->x)
-				enemy->tx = (int)(enemy->x + 100);
+				mv.propose(MOVE_PRIO_GRENADE, (int)(enemy->x + 100));
 			else
-				enemy->tx = (int)(enemy->x - 100);
+				mv.propose(MOVE_PRIO_GRENADE, (int)(enemy->x - 100));
 		}
 	}
 
@@ -1519,9 +2727,9 @@ void doAI(Entity *enemy)
 			{
 				// Move away from ally's grenade position
 				if (otherSt.grenadeX < enemy->x)
-					enemy->tx = (int)(enemy->x + 100);
+					mv.propose(MOVE_PRIO_GRENADE, (int)(enemy->x + 100));
 				else
-					enemy->tx = (int)(enemy->x - 100);
+					mv.propose(MOVE_PRIO_GRENADE, (int)(enemy->x - 100));
 			}
 		}
 	}
@@ -1537,12 +2745,29 @@ void doAI(Entity *enemy)
 			{
 				// Move away from the other enemy
 				if (other->x < enemy->x)
-					enemy->tx = (int)(enemy->x + 50);
+					mv.propose(MOVE_PRIO_SEPARATION, (int)(enemy->x + 50));
 				else
-					enemy->tx = (int)(enemy->x - 50);
+					mv.propose(MOVE_PRIO_SEPARATION, (int)(enemy->x - 50));
 			}
 		}
 	}
+
+	// safe mode: head for cover, or just away from Bob when there is none
+	if (ai.safeMode)
+	{
+		if (ai.hasCover)
+			mv.propose(MOVE_PRIO_COVER, ai.coverX);
+		else
+			mv.propose(MOVE_PRIO_COVER, (int)((player.x < enemy->x) ? (enemy->x + 100) : (enemy->x - 100)));
+	}
+
+	// apply the winning destination (nothing proposed = keep the current one)
+	if (mv.has)
+		enemy->tx = mv.tx;
+
+	// the cover (or the flight from Bob) also sets the height it flies at
+	if (ai.safeMode && mv.has && (mv.prio == MOVE_PRIO_COVER))
+		enemy->ty = ai.hasCover ? ai.coverY : (int)enemy->y;
 
 	// Don't enter areas you're not supposed to
 	if (enemy->tx != (int)enemy->x)
@@ -1628,10 +2853,36 @@ void doAI(Entity *enemy)
 		if ((int)enemy->y > enemy->ty) enemy->dy = -1;
 	}
 
-	// winding up a shot or firing a burst: hold still
-	if ((ai.telegraph > 0) || (ai.burstLeft > 0))
+	// staggered by a hit on the bare chassis: hold still, then a short grace period
+	if (ai.stagger > 0)
+	{
+		if (--ai.stagger == 0)
+			ai.staggerImmune = DROID_STAGGER_IMMUNITY;
+
+		enemy->dx = 0;
+
+		if ((enemy->flags & ENT_FLIES) || (enemy->flags & ENT_SWIMS))
+			enemy->dy = 0;
+	}
+	else if (ai.staggerImmune > 0)
+	{
+		ai.staggerImmune--;
+	}
+
+	// winding up a shot, firing a burst or a beam: hold still
+	if ((ai.telegraph > 0) || (ai.burstLeft > 0) || (ai.beamTimer > 0))
 	{
 		enemy->dx = 0;
+
+		if ((enemy->flags & ENT_FLIES) || (enemy->flags & ENT_SWIMS))
+			enemy->dy = 0;
+	}
+
+	// safe mode: it crawls, moving on only one frame in DROID_SAFE_MOVE_PERIOD
+	if (ai.safeMode && ((aiFrame % DROID_SAFE_MOVE_PERIOD) != 0))
+	{
+		if (!enemy->falling)
+			enemy->dx = 0;
 
 		if ((enemy->flags & ENT_FLIES) || (enemy->flags & ENT_SWIMS))
 			enemy->dy = 0;
@@ -1650,6 +2901,400 @@ void checkCombo()
 	{
 		presentPlayerMedal("25_Hit_Combo");
 	}
+}
+
+// ---- Utility droid: shield feedback ----
+// While the shield holds, a cyan bubble (soft fill + bright rim) pulses around the droid,
+// drawn on top of the sprite and dimmer as the shield drops. Once it is broken the bubble
+// is gone and the droid sheds debris that falls and bounces.
+static SDL_Surface *droidBubble = NULL;
+static int droidBubbleW = 0;
+static int droidBubbleH = 0;
+static const int DROID_BUBBLE_PAD = 4; // pixels the bubble extends beyond the droid on every side
+static const float DROID_BUBBLE_OPACITY = 0.5f; // overall strength of the bubble (1.0 = full, lower = more subtle)
+
+static void createDroidBubble(int w, int h)
+{
+	if ((droidBubble != NULL) && (droidBubbleW == w) && (droidBubbleH == h))
+		return;
+
+	if (droidBubble != NULL)
+	{
+		SDL_FreeSurface(droidBubble);
+		droidBubble = NULL;
+	}
+
+	droidBubbleW = w;
+	droidBubbleH = h;
+
+	int bw = w + (DROID_BUBBLE_PAD * 2);
+	int bh = h + (DROID_BUBBLE_PAD * 2);
+
+	droidBubble = SDL_CreateRGBSurface(0, bw, bh, 32, 0xff0000, 0xff00, 0xff, 0xff000000);
+
+	if (droidBubble == NULL)
+		return;
+
+	SDL_SetSurfaceBlendMode(droidBubble, SDL_BLENDMODE_BLEND);
+
+	if (SDL_MUSTLOCK(droidBubble))
+		SDL_LockSurface(droidBubble);
+
+	for (int py = 0 ; py < bh ; py++)
+	{
+		Uint32 *row = (Uint32*)(((Uint8*)droidBubble->pixels) + (py * droidBubble->pitch));
+
+		for (int px = 0 ; px < bw ; px++)
+		{
+			float nx = (px + 0.5f - (bw / 2.0f)) / (bw / 2.0f);
+			float ny = (py + 0.5f - (bh / 2.0f)) / (bh / 2.0f);
+			float d = sqrtf((nx * nx) + (ny * ny));
+			int alpha = 0;
+
+			if (d <= 1.0f)
+			{
+				// soft translucent fill, a bit stronger towards the edge
+				float fill = 18.0f + (30.0f * d * d);
+				float rim = 0.0f;
+
+				// bright rim in the outer 15% of the radius
+				if (d >= 0.85f)
+				{
+					rim = 170.0f * sinf(3.14159265f * ((d - 0.85f) / 0.15f));
+				}
+
+				alpha = (int)((rim > fill) ? rim : fill);
+
+				if (alpha > 255)
+					alpha = 255;
+			}
+
+			row[px] = SDL_MapRGBA(droidBubble->format, 0, 229, 255, (Uint8)alpha);
+		}
+	}
+
+	if (SDL_MUSTLOCK(droidBubble))
+		SDL_UnlockSurface(droidBubble);
+}
+
+// Pieces that come off the droid: physical particles (gravity, bounce on the terrain)
+static void addDroidDebris(Entity *enemy, int count, float speed)
+{
+	Uint32 cyan = SDL_MapRGB(graphics.screen->format, 0, 229, 255);
+	Uint32 steel = SDL_MapRGB(graphics.screen->format, 150, 160, 170);
+	Uint32 dark = SDL_MapRGB(graphics.screen->format, 70, 75, 85);
+
+	for (int i = 0 ; i < count ; i++)
+	{
+		float px = enemy->x + Math::rrand(0, enemy->width);
+		float py = enemy->y + Math::rrand(0, enemy->height);
+		float dx = (Math::rrand(-15, 15) / 10.0f) * speed;
+		float dy = (Math::rrand(-20, 5) / 10.0f) * speed;
+
+		int pick = (int)(Math::prand() % 3);
+		Uint32 color = (pick == 0) ? cyan : ((pick == 1) ? steel : dark);
+
+		map.addParticle(px, py, dx, dy, Math::rrand(30, 70), color, NULL, PAR_COLLIDES);
+	}
+}
+
+static void drawDroidShield(Entity *enemy, int x, int y)
+{
+	if (enemy->health <= 0)
+		return;
+
+	std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+	if ((it == aiState.end()) || (!it->second.utilityDroid))
+		return;
+
+	EnemyAIState &st = it->second;
+
+	if (st.shield > 0)
+	{
+		createDroidBubble(enemy->width, enemy->height);
+
+		if (droidBubble == NULL)
+			return;
+
+		int phase = (int)((aiFrame + (unsigned int)(((size_t)enemy) >> 4)) % 60);
+		int tri = (phase < 30) ? phase : (60 - phase);
+		float frac = (st.maxShield > 0) ? ((float)st.shield / st.maxShield) : 1.0f;
+		float pulse = 0.70f + (0.30f * (tri / 30.0f));
+		int alpha = (int)(255 * DROID_BUBBLE_OPACITY * pulse * (0.45f + (0.55f * frac)));
+
+		// almost gone: the field flickers
+		if ((frac <= 0.4f) && (((aiFrame / 3) % 2) == 0))
+			alpha /= 2;
+
+		if (alpha > 255)
+			alpha = 255;
+
+		SDL_SetSurfaceAlphaMod(droidBubble, (Uint8)alpha);
+		graphics.blit(droidBubble, x - DROID_BUBBLE_PAD, y - DROID_BUBBLE_PAD, graphics.screen, false);
+		return;
+	}
+
+	// shield down: it keeps losing pieces
+	if ((aiFrame % 3) == 0)
+		addDroidDebris(enemy, Math::rrand(1, 2), 1.0f);
+}
+
+// ---- Eye Droid beam: look ----
+// The beam has no sprite. Two soft round dots, a wide dim glow and a thin bright core, are generated here (like the shield
+// bubble) and stamped along the line from the droid to where the beam ends, so it works at any angle and any length.
+static SDL_Surface *beamGlowDot = NULL;
+static SDL_Surface *beamCoreDot = NULL;
+static const int BEAM_GLOW_SIZE = 14;      // diameter of the glow dot (pixels)
+static const int BEAM_CORE_SIZE = 6;       // diameter of the core dot
+static const int BEAM_GLOW_SPACING = 4;    // pixels between two glow dots along the beam (they overlap)
+static const int BEAM_CORE_SPACING = 3;    // same for the core
+static const int BEAM_GLOW_ALPHA = 70;     // strength of each glow dot (they add up where they overlap)
+static const int BEAM_FADE_FRAMES = 6;     // frames the beam takes to appear and to go out
+
+// Round dot: solid up to 'hardness' of the radius, soft towards the edge
+static SDL_Surface *createBeamDot(int size, int r, int g, int b, float hardness)
+{
+	SDL_Surface *dot = SDL_CreateRGBSurface(0, size, size, 32, 0xff0000, 0xff00, 0xff, 0xff000000);
+
+	if (dot == NULL)
+		return NULL;
+
+	SDL_SetSurfaceBlendMode(dot, SDL_BLENDMODE_BLEND);
+
+	if (SDL_MUSTLOCK(dot))
+		SDL_LockSurface(dot);
+
+	for (int py = 0 ; py < size ; py++)
+	{
+		Uint32 *row = (Uint32*)(((Uint8*)dot->pixels) + (py * dot->pitch));
+
+		for (int px = 0 ; px < size ; px++)
+		{
+			float nx = (px + 0.5f - (size / 2.0f)) / (size / 2.0f);
+			float ny = (py + 0.5f - (size / 2.0f)) / (size / 2.0f);
+			float d = sqrtf((nx * nx) + (ny * ny));
+			float a = 0.0f;
+
+			if (d <= hardness)
+				a = 1.0f;
+			else if (d < 1.0f)
+				a = (1.0f - d) / (1.0f - hardness);
+
+			row[px] = SDL_MapRGBA(dot->format, r, g, b, (Uint8)(255 * a * a));
+		}
+	}
+
+	if (SDL_MUSTLOCK(dot))
+		SDL_UnlockSurface(dot);
+
+	return dot;
+}
+
+// Stamps one of the dots along the beam
+static void stampBeamDots(SDL_Surface *dot, int size, int spacing, int alpha, float sx, float sy, float dirX, float dirY, float len)
+{
+	SDL_SetSurfaceAlphaMod(dot, (Uint8)alpha);
+
+	for (float d = 0.0f ; d <= len ; d += spacing)
+	{
+		int px = (int)(sx + (dirX * d));
+		int py = (int)(sy + (dirY * d));
+
+		if ((px < -size) || (py < -size) || (px > graphics.logicalW() + size) || (py > graphics.logicalH() + size))
+			continue;
+
+		graphics.blit(dot, px - (size / 2), py - (size / 2), graphics.screen, false);
+	}
+}
+
+static void drawDroidBeam(Entity *enemy, int x, int y)
+{
+	if (enemy->health <= 0)
+		return;
+
+	std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+	if ((it == aiState.end()) || (it->second.beamTimer <= 0) || (it->second.beamLen < 1.0f))
+		return;
+
+	EnemyAIState &st = it->second;
+
+	if (beamGlowDot == NULL)
+		beamGlowDot = createBeamDot(BEAM_GLOW_SIZE, 255, 40, 40, 0.0f);
+
+	if (beamCoreDot == NULL)
+		beamCoreDot = createBeamDot(BEAM_CORE_SIZE, 255, 225, 215, 0.5f);
+
+	if ((beamGlowDot == NULL) || (beamCoreDot == NULL))
+		return;
+
+	float sx = x + (enemy->width / 2.0f);
+	float sy = y + (enemy->height / 2.0f);
+	float dirX = cosf(st.beamAngle);
+	float dirY = sinf(st.beamAngle);
+
+	// it fades in when it starts and out when it ends
+	int elapsed = st.beamTotal - st.beamTimer;
+	int edge = std::min(elapsed + 1, st.beamTimer + 1);
+	float fade = std::min(1.0f, (float)edge / BEAM_FADE_FRAMES);
+
+	// pulse, like the shield bubble
+	int phase = (int)((aiFrame + (unsigned int)(((size_t)enemy) >> 4)) % 20);
+	int tri = (phase < 10) ? phase : (20 - phase);
+	float pulse = 0.75f + (0.25f * (tri / 10.0f));
+
+	stampBeamDots(beamGlowDot, BEAM_GLOW_SIZE, BEAM_GLOW_SPACING, (int)(BEAM_GLOW_ALPHA * fade * pulse), sx, sy, dirX, dirY, st.beamLen);
+	stampBeamDots(beamCoreDot, BEAM_CORE_SIZE, BEAM_CORE_SPACING, (int)(255 * fade), sx, sy, dirX, dirY, st.beamLen);
+}
+
+// True for a utility droid whose shield is already down
+static bool isDroidShieldDown(Entity *enemy)
+{
+	std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+	return ((it != aiState.end()) && (it->second.utilityDroid) && (it->second.shield <= 0));
+}
+
+// Direct hit on the bare chassis: a micro-stun (doAI holds it still while it lasts)
+static void staggerDroid(Entity *enemy)
+{
+	std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+	if ((it == aiState.end()) || (!it->second.utilityDroid))
+		return;
+
+	if ((it->second.stagger > 0) || (it->second.staggerImmune > 0))
+		return;
+
+	it->second.stagger = DROID_STAGGER_FRAMES;
+}
+
+// The utility droid's shield soaks damage first. Whatever it can't absorb
+// (a hit bigger than the shield left) carries over to health. Returns that remainder.
+static int soakShieldDamage(Entity *enemy, int damage)
+{
+	std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+	if ((it == aiState.end()) || (!it->second.utilityDroid) || (it->second.shield <= 0) || (damage <= 0))
+		return damage;
+
+	EnemyAIState &ai = it->second;
+
+	if (damage < ai.shield)
+	{
+		ai.shield -= damage;
+		return 0;
+	}
+
+	int overflow = damage - ai.shield;
+	ai.shield = 0;
+	enterDroidSafeMode(ai); // 10 s until the shield is back
+
+	addDroidDebris(enemy, 18, 3.0f); // the shield shatters
+
+	return overflow;
+}
+
+// Explosion damage to an enemy (called from explosions.cpp). Goes through the shield like
+// bullets do; an explosion caused by the player also makes the utility droid want to dash.
+int soakExplosionDamage(Entity *enemy, int damage, bool fromPlayer)
+{
+	int remaining = soakShieldDamage(enemy, damage);
+
+	if (fromPlayer)
+	{
+		std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+		if ((it != aiState.end()) && (it->second.utilityDroid))
+			it->second.dashReact = true;
+	}
+
+	return remaining;
+}
+
+// Gravitational deflection (called from doBullets() in bullets.cpp, once per frame, before the
+// grenade moves). When one of the player's grenades gets inside the repulsor field of a
+// utility droid that still has DROID_DEFLECT_COST shield points, the droid takes no damage and
+// the grenade bounces off the field like a billiard ball: it is reflected about the line from the
+// droid's center to the grenade, so it leaves at the mirror angle of how it arrived. Costs 2
+// shield points. With fewer points the field is off and the grenade hits (and explodes) as usual.
+// Returns true when the grenade was deflected.
+bool deflectGrenadeAtDroids(Entity *bullet)
+{
+	if ((bullet->owner != &player) || (bullet->id != WP_GRENADES) || (bullet->health < 1))
+		return false;
+
+	float bx = bullet->x + (bullet->width / 2.0f);
+	float by = bullet->y + (bullet->height / 2.0f);
+
+	Entity *enemy = (Entity*)map.enemyList.getHead();
+
+	while (enemy->next != NULL)
+	{
+		enemy = (Entity*)enemy->next;
+
+		if (enemy->health <= 0)
+			continue;
+
+		std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+		if ((it == aiState.end()) || (!it->second.utilityDroid) || (it->second.shield < DROID_DEFLECT_COST))
+			continue;
+
+		float cx = enemy->x + (enemy->width / 2.0f);
+		float cy = enemy->y + (enemy->height / 2.0f);
+		float radius = (((enemy->width > enemy->height) ? enemy->width : enemy->height) / 2.0f) + DROID_DEFLECT_MARGIN;
+
+		float nx = bx - cx;
+		float ny = by - cy;
+		float dist = sqrtf((nx * nx) + (ny * ny));
+
+		if ((dist >= radius) || (dist < 0.01f))
+			continue;
+
+		nx /= dist;
+		ny /= dist;
+
+		float into = (bullet->dx * nx) + (bullet->dy * ny);
+
+		if (into >= 0.0f) // already moving away from the droid: leave it alone
+			continue;
+
+		// mirror the velocity about the normal and push the grenade back to the field's edge
+		bullet->dx -= 2.0f * into * nx;
+		bullet->dy -= 2.0f * into * ny;
+		bullet->x += nx * ((radius + 2.0f) - dist);
+		bullet->y += ny * ((radius + 2.0f) - dist);
+
+		if (bullet->dx != 0.0f)
+			bullet->face = (bullet->dx < 0.0f) ? 1 : 0;
+
+		EnemyAIState &ai = it->second;
+
+		ai.shield -= DROID_DEFLECT_COST;
+
+		// the point of contact flashes
+		for (int i = 0 ; i < 10 ; i++)
+		{
+			float pdx = Math::rrand(-20, 20); pdx /= 10;
+			float pdy = Math::rrand(-20, 20); pdy /= 10;
+			map.addParticle(cx + (nx * (radius - 6.0f)), cy + (ny * (radius - 6.0f)), pdx, pdy, Math::rrand(10, 25), graphics.cyan, NULL, 0);
+		}
+
+		audio.playSound(SND_CLANG, CH_ANY, enemy->x);
+
+		if (ai.shield <= 0)
+		{
+			ai.shield = 0;
+			addDroidDebris(enemy, 18, 3.0f); // the field collapses like a broken shield
+			enterDroidSafeMode(ai);
+		}
+
+		return true;
+	}
+
+	return false;
 }
 
 void enemyBulletCollisions(Entity *bullet)
@@ -1714,6 +3359,7 @@ void enemyBulletCollisions(Entity *bullet)
 						hitState.awareness = AWARE_MAX;
 						hitState.alerted = true;
 						hitState.lostSight = 0;
+						hitState.dashReact = true;
 
 						alertNearbyEnemies(enemy);
 
@@ -1755,7 +3401,12 @@ void enemyBulletCollisions(Entity *bullet)
 				{
 					if (!(enemy->flags & ENT_IMMUNE))
 					{
-						enemy->health -= bullet->damage;
+						bool droidShieldWasDown = isDroidShieldDown(enemy);
+
+						enemy->health -= soakShieldDamage(enemy, bullet->damage);
+
+						if (droidShieldWasDown && (bullet->damage > 0))
+							staggerDroid(enemy);
 					}
 					
 					if (enemy->health <= 0)
@@ -1907,6 +3558,17 @@ void gibEnemy(Entity *enemy)
 	(game.gore) ? audio.playSound(SND_SPLAT, CH_ANY) : audio.playSound(SND_POP, CH_ANY, enemy->x);
 }
 
+// Rank of an enemy for its drops; does not create AI state for an enemy that has none
+static int getDropRank(Entity *enemy)
+{
+	std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
+
+	if (it == aiState.end())
+		return RANK_SOLDIER;
+
+	return it->second.rank;
+}
+
 void doEnemies()
 {
 	Entity *enemy = (Entity*)map.enemyList.getHead();
@@ -1991,6 +3653,12 @@ void doEnemies()
 					}
 				}
 				
+				// Eye Droid beam: turns, finds its end and hurts for as long as it is on
+				std::map<Entity*, EnemyAIState>::iterator beamIt = aiState.find(enemy);
+
+				if ((beamIt != aiState.end()) && (beamIt->second.beamTimer > 0))
+					updateDroidBeam(enemy, beamIt->second);
+
 				if (map.isBlizzardLevel)
 				{
 					enemy->dx += map.windPower * 0.1;
@@ -2011,6 +3679,8 @@ void doEnemies()
 					}
 					
 					graphics.blit(enemy->getFaceImage(), x, y, graphics.screen, false);
+					drawDroidShield(enemy, x, y);
+					drawDroidBeam(enemy, x, y);
 					
 					drawAwareness(enemy, x, y);
 					drawHealthBar(enemy, x, y);
@@ -2115,7 +3785,7 @@ void doEnemies()
 							
 							if (enemy->value)
 							{
-								dropRandomItems((int)enemy->x, (int)enemy->y);
+								dropRandomItemsByRank((int)enemy->x, (int)enemy->y, getDropRank(enemy));
 							}
 						}
 						
@@ -2132,7 +3802,7 @@ void doEnemies()
 								
 								if (enemy->value)
 								{
-									dropRandomItems((int)enemy->x, (int)enemy->y);
+									dropRandomItemsByRank((int)enemy->x, (int)enemy->y, getDropRank(enemy));
 								}
 							}
 							

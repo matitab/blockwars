@@ -159,9 +159,18 @@ void doParticles()
 
 		if (particle->sprite == NULL)
 		{
+			int scale = graphics.renderScale;
+			if (scale < 1)
+				scale = 1;
+
 			graphics.lock(graphics.screen);
-			
-			graphics.putPixel(x, y, particle->color, graphics.screen);
+			for (int py = 0 ; py < scale ; py++)
+			{
+				for (int px = 0 ; px < scale ; px++)
+				{
+					graphics.putPixel((x * scale) + px, (y * scale) + py, particle->color, graphics.screen);
+				}
+			}
 			
 			graphics.unlock(graphics.screen);
 		}

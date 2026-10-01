@@ -63,7 +63,7 @@ void playIntro(int tx, int ty, int delay)
 		// Text layout designed for 640x480: centre it on the real surface
 		for (int i = 0 ; i < 3 ; i++)
 			if (text[i] != NULL)
-				graphics.blit(text[i], graphics.screen->w / 2, 150 + ((graphics.screen->h - 480) / 2) + (i * 30), graphics.screen, true);
+				graphics.blit(text[i], graphics.logicalW() / 2, 150 + ((graphics.logicalH() - 480) / 2) + (i * 30), graphics.screen, true);
 
 		if (engine.userAccepts())
 			break;
@@ -100,8 +100,8 @@ void showIntroError()
 
 	graphics.setFontSize(1);
 
-	const int cx = graphics.screen->w / 2;
-	const int dy = (graphics.screen->h - 480) / 2;
+	const int cx = graphics.logicalW() / 2;
+	const int dy = (graphics.logicalH() - 480) / 2;
 
 	graphics.drawString("Couldn't play intro - Data file is missing.", cx, 150 + dy, true, graphics.screen);
 	graphics.drawString("This is not a fatal error, but could mean that the intro", cx, 180 + dy, true, graphics.screen);

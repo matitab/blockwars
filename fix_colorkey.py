@@ -1,7 +1,8 @@
 r"""
 Deja los PNG listos para el colorkey negro de Blob Wars, reemplazandolos directamente.
 
-- Si el PNG tiene transparencia (alfa), la mezcla sobre negro puro (0,0,0).
+- Si el PNG tiene transparencia (alfa), conserva el color RGB de los bordes
+    parcialmente transparentes para evitar halos negros; el alfa cero pasa a negro.
 - Los pixeles casi negros (por ejemplo 1,1,2 o 2,2,3, tipico de los reescaladores)
   pasan a negro exacto (0,0,0), asi el juego los toma como transparentes.
 - Guarda todo como RGB (sin canal alfa), igual que los originales.
@@ -20,8 +21,9 @@ from PIL import Image
 
 def fix_in_place(path, thr):
     im = Image.open(path).convert("RGBA")
-    a = np.array(im).astype(np.float32)
-    rgb = a[..., :3] * (a[..., 3:] / 255.0)      # mezcla sobre negro
+    a = np.array(im)
+    rgb = a[..., :3].copy()
+    rgb[a[..., 3] == 0] = 0                      # alfa cero -> colorkey negro
     rgb[rgb.max(axis=2) <= thr] = 0              # casi negro -> negro exacto
     Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8), "RGB").save(path)
 
