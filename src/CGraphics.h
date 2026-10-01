@@ -92,6 +92,8 @@ class Graphics {
 	void RGBtoHSV(float r, float g, float b, float *h, float *s, float *v);
 	void HSVtoRGB(float *r, float *g, float *b, float h, float s, float v);
 	SDL_Surface *loadImage(const char *filename, bool srcalpha = false);
+	// Looks for a 2x variant under the source image's directory and preserves its logical size.
+	SDL_Surface *loadImage2x(const char *filename, bool srcalpha = false);
 	SDL_Surface *loadImage(const char *filename, int hue, int sat, int value);
 	SDL_Surface *loadSpriteImage(const char *filename, int hue, int sat, int value);
 	void setLogicalSize(SDL_Surface *surface, int w, int h);

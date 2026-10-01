@@ -629,6 +629,51 @@ SDL_Surface *Graphics::loadImage(const char *filename, int hue, int sat, int val
 	return newImage;
 }
 
+SDL_Surface *Graphics::loadImage2x(const char *filename, bool srcalpha)
+{
+	SDL_Surface *image = loadImage(filename, srcalpha);
+	if (!image)
+		return image;
+
+	const char *base = strrchr(filename, '/');
+	char path2x[512];
+	int pathLength;
+
+	if (base)
+		pathLength = snprintf(path2x, sizeof path2x, "%.*s/2x/%s", (int)(base - filename), filename, base + 1);
+	else
+		pathLength = snprintf(path2x, sizeof path2x, "2x/%s", filename);
+
+	if ((pathLength < 0) || ((size_t)pathLength >= sizeof path2x))
+		return image;
+
+	#if USEPAK
+	if (!engine->getPak()->fileExists(path2x))
+		return image;
+	#else
+	FILE *fp = fopen(path2x, "rb");
+	if (!fp)
+		return image;
+	fclose(fp);
+	#endif
+
+	SDL_Surface *image2x = loadImage(path2x, srcalpha);
+	if (!image2x)
+		return image;
+
+	if ((image2x->w != image->w * 2) || (image2x->h != image->h * 2))
+	{
+		printf("WARNING: '%s' is %dx%d, expected %dx%d. Using the original image.\n", path2x, image2x->w, image2x->h, image->w * 2, image->h * 2);
+		SDL_FreeSurface(image2x);
+		return image;
+	}
+
+	setLogicalSize(image2x, image->w, image->h);
+	SDL_FreeSurface(image);
+
+	return image2x;
+}
+
 /*
 	Tamaño lógico de una superficie: el tamaño con el que el juego la trata
 	(dibujo, centrado, recorte). Para las imágenes normales coincide con w/h.
@@ -955,7 +1000,7 @@ void Graphics::loadBackground(const char *filename)
 	if (strcmp(filename, "@none@") == 0)
 		return;
 
-	background = loadImage(filename);
+	background = loadImage2x(filename);
 
 	SDL_SetColorKey(background, 0, SDL_MapRGB(background->format, 0, 0, 0));
 }

@@ -313,7 +313,7 @@ void showMap(int centerX, int centerY)
 	SDL_Delay(500);
 	
 	SDL_Surface *panel = graphics.createSurface(320, 240);
-	SDL_Surface *background = graphics.loadImage("gfx/main/mapBackground.png");
+	SDL_Surface *background = graphics.loadImage2x("gfx/main/mapBackground.png");
 	SDL_SetAlpha(background, 130);
 	
 	graphics.blit(background, 0, 0, panel, false);

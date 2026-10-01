@@ -171,14 +171,14 @@ int title()
 	float titleAlpha = 0;
 	bool allFadedOn = false;
 
-	graphics.quickSprite("cheatHeader", graphics.loadImage("gfx/main/cheats.png"));
-	graphics.quickSprite("optionsHeader", graphics.loadImage("gfx/main/options.png"));
-	graphics.quickSprite("keyHeader", graphics.loadImage("gfx/main/keyConfig.png"));
-	graphics.quickSprite("joystickHeader", graphics.loadImage("gfx/main/joystickConfig.png"));
-	graphics.quickSprite("optionsBackground", graphics.loadImage("gfx/main/optionsBackground.png"));
+	graphics.quickSprite("cheatHeader", graphics.loadImage2x("gfx/main/cheats.png"));
+	graphics.quickSprite("optionsHeader", graphics.loadImage2x("gfx/main/options.png"));
+	graphics.quickSprite("keyHeader", graphics.loadImage2x("gfx/main/keyConfig.png"));
+	graphics.quickSprite("joystickHeader", graphics.loadImage2x("gfx/main/joystickConfig.png"));
+	graphics.quickSprite("optionsBackground", graphics.loadImage2x("gfx/main/optionsBackground.png"));
 
-	SDL_Surface *prlogo = graphics.quickSprite("PRLogo", graphics.loadImage("gfx/main/prlogo.gif"));
-	SDL_Surface *title = graphics.quickSprite("Title", graphics.loadImage("gfx/main/title.png"));
+	SDL_Surface *prlogo = graphics.quickSprite("PRLogo", graphics.loadImage2x("gfx/main/prlogo.gif"));
+	SDL_Surface *title = graphics.quickSprite("Title", graphics.loadImage2x("gfx/main/title.png"));
 	
 	graphics.setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
 
@@ -483,7 +483,7 @@ void doCredits()
 	int pos1 = 0, pos2 = 0, size = 0;
 	float *y, deviceY = 0;
 
-	SDL_Surface *backdrop = graphics.quickSprite("CreditsBackGround", graphics.loadImage("gfx/main/creditsBack.png"));
+	SDL_Surface *backdrop = graphics.quickSprite("CreditsBackGround", graphics.loadImage2x("gfx/main/creditsBack.png"));
 
 	engine.loadData(_("data/credits"));
 
@@ -524,7 +524,7 @@ void doCredits()
 		line = strtok(NULL, "\n");
 	}
 	
-	SDL_Surface *device = graphics.quickSprite("credit", graphics.loadImage("gfx/main/creditsDevice.png"));
+	SDL_Surface *device = graphics.quickSprite("credit", graphics.loadImage2x("gfx/main/creditsDevice.png"));
 
 	if (!deviceY)
 		deviceY = y[numberOfCredits - 7] - 50;
@@ -594,8 +594,8 @@ void doCredits()
 void doQuit()
 {
 	SDL_FillRect(graphics.screen, NULL, graphics.black);
-	SDL_Surface *sequel = graphics.loadImage("gfx/main/sequel.png");
-	SDL_Surface *book = graphics.loadImage("gfx/main/book.png");
+	SDL_Surface *sequel = graphics.loadImage2x("gfx/main/sequel.png");
+	SDL_Surface *book = graphics.loadImage2x("gfx/main/book.png");
 
 	// Layout designed for 640x480: centre it on the real surface
 	const int dx = (graphics.logicalW() - 640) / 2;

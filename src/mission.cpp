@@ -158,7 +158,7 @@ void showMissionClear()
 
 	SDL_Surface *clear;
 
-	(perfect) ? clear = graphics.loadImage("gfx/main/areaPerfect.png") : clear = graphics.loadImage("gfx/main/areaClear.png");
+	(perfect) ? clear = graphics.loadImage2x("gfx/main/areaPerfect.png") : clear = graphics.loadImage2x("gfx/main/areaClear.png");
 
 	graphics.loadBackground("gfx/main/areaClearBackGround.jpg");
 

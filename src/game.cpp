@@ -300,7 +300,7 @@ int gameover()
 		return graphics.showErrorAndExit(ERR_FILE, _("data/gameOverWidgets")), SECTION_GAME;
 	}
 
-	SDL_Surface *gameover = graphics.quickSprite("Game Over", graphics.loadImage("gfx/main/gameover.png"));
+	SDL_Surface *gameover = graphics.quickSprite("Game Over", graphics.loadImage2x("gfx/main/gameover.png"));
 	graphics.setTransparent(gameover);
 
 	audio.loadGameOverMusic();

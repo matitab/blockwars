@@ -66,11 +66,11 @@ void loadResources()
 	audio.free();
 	graphics.free();
 	
-	graphics.quickSprite("cheatHeader", graphics.loadImage("gfx/main/cheats.png"));
-	graphics.quickSprite("optionsHeader", graphics.loadImage("gfx/main/options.png"));
-	graphics.quickSprite("joystickHeader", graphics.loadImage("gfx/main/joystickConfig.png"));
-	graphics.quickSprite("keyHeader", graphics.loadImage("gfx/main/keyConfig.png"));
-	graphics.quickSprite("optionsBackground", graphics.loadImage("gfx/main/optionsBackground.png"));
+	graphics.quickSprite("cheatHeader", graphics.loadImage2x("gfx/main/cheats.png"));
+	graphics.quickSprite("optionsHeader", graphics.loadImage2x("gfx/main/options.png"));
+	graphics.quickSprite("joystickHeader", graphics.loadImage2x("gfx/main/joystickConfig.png"));
+	graphics.quickSprite("keyHeader", graphics.loadImage2x("gfx/main/keyConfig.png"));
+	graphics.quickSprite("optionsBackground", graphics.loadImage2x("gfx/main/optionsBackground.png"));
 
 	SDL_FillRect(graphics.screen, NULL, graphics.black);
 	graphics.drawString(_("Loading..."), 320 + ((graphics.logicalW() - 640) / 2), 440 + ((graphics.logicalH() - 480) / 2), TXT_CENTERED, graphics.screen);

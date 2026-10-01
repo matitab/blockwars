@@ -41,7 +41,7 @@ void showLicense()
 	graphics.delay(1000);
 
 	SDL_FillRect(graphics.screen, NULL, graphics.black);
-	SDL_Surface *pic = graphics.loadImage("gfx/main/licensePic.png");
+	SDL_Surface *pic = graphics.loadImage2x("gfx/main/licensePic.png");
 	// Layout designed for 640x480: centre it on the real surface
 	const int dx = (graphics.logicalW() - 640) / 2;
 	const int dy = (graphics.logicalH() - 480) / 2;
@@ -439,13 +439,13 @@ void initSystem()
 	audio.loadSound(SND_HIGHLIGHT, "sound/menu");
 	audio.loadSound(SND_SELECT, "sound/select");
 	
-	graphics.medal[0] = graphics.loadImage("gfx/main/medal_bronze_1.png");
-	graphics.medal[1] = graphics.loadImage("gfx/main/award_star_silver_3.png");
-	graphics.medal[2] = graphics.loadImage("gfx/main/shield.png");
-	graphics.medal[3] = graphics.loadImage("gfx/main/ruby.png");
+	graphics.medal[0] = graphics.loadImage2x("gfx/main/medal_bronze_1.png");
+	graphics.medal[1] = graphics.loadImage2x("gfx/main/award_star_silver_3.png");
+	graphics.medal[2] = graphics.loadImage2x("gfx/main/shield.png");
+	graphics.medal[3] = graphics.loadImage2x("gfx/main/ruby.png");
 
-	graphics.license[0] = graphics.loadImage("gfx/main/cc-by.png", true);
-	graphics.license[1] = graphics.loadImage("gfx/main/cc-by-sa.png", true);
+	graphics.license[0] = graphics.loadImage2x("gfx/main/cc-by.png", true);
+	graphics.license[1] = graphics.loadImage2x("gfx/main/cc-by-sa.png", true);
 
 	SDL_Surface *device = graphics.loadImage("gfx/main/alienDevice.png");
 	SDL_SetWindowIcon(graphics.window, device);

@@ -446,11 +446,11 @@ int doHub()
 	// we might want this now, for medals
 	audio.loadSound(SND_ITEM, "sound/item");
 	
-	graphics.quickSprite("cheatHeader", graphics.loadImage("gfx/main/cheats.png"));
-	graphics.quickSprite("optionsHeader", graphics.loadImage("gfx/main/options.png"));
-	graphics.quickSprite("keyHeader", graphics.loadImage("gfx/main/keyConfig.png"));
-	graphics.quickSprite("joystickHeader", graphics.loadImage("gfx/main/joystickConfig.png"));
-	graphics.quickSprite("optionsBackground", graphics.loadImage("gfx/main/optionsBackground.png"));
+	graphics.quickSprite("cheatHeader", graphics.loadImage2x("gfx/main/cheats.png"));
+	graphics.quickSprite("optionsHeader", graphics.loadImage2x("gfx/main/options.png"));
+	graphics.quickSprite("keyHeader", graphics.loadImage2x("gfx/main/keyConfig.png"));
+	graphics.quickSprite("joystickHeader", graphics.loadImage2x("gfx/main/joystickConfig.png"));
+	graphics.quickSprite("optionsBackground", graphics.loadImage2x("gfx/main/optionsBackground.png"));
 
 	char string[80];
 
@@ -458,7 +458,7 @@ int doHub()
 	for (int i = 0 ; i < 6 ; i++)
 	{
 		snprintf(string, sizeof string, "gfx/main/cursor%d.png", i + 1);
-		cursor->setFrame(i, graphics.loadImage(string), 10);
+		cursor->setFrame(i, graphics.loadImage2x(string), 10);
 	}
 
 	Sprite *newTarget = graphics.addSprite("NewTarget");
@@ -476,16 +476,16 @@ int doHub()
 	for (int i = 0 ; i < 6 ; i++)
 	{
 		snprintf(string, sizeof string, "gfx/main/hubIcon%d.png", i + 1);
-		hubIcons->setFrame(i, graphics.loadImage(string), 60);
+		hubIcons->setFrame(i, graphics.loadImage2x(string), 60);
 	}
 
 	SDL_Surface *infoPanel = graphics.quickSprite("infoPanel", graphics.createSurface(400, 300));
 
 	Sprite *hubArrows = graphics.addSprite("HubArrows");
-	hubArrows->setFrame(0, graphics.loadImage("gfx/main/hubArrowLeft.png"), 60);
-	hubArrows->setFrame(1, graphics.loadImage("gfx/main/hubArrowLeft2.png"), 60);
-	hubArrows->setFrame(2, graphics.loadImage("gfx/main/hubArrowRight.png"), 60);
-	hubArrows->setFrame(3, graphics.loadImage("gfx/main/hubArrowRight2.png"), 60);
+	hubArrows->setFrame(0, graphics.loadImage2x("gfx/main/hubArrowLeft.png"), 60);
+	hubArrows->setFrame(1, graphics.loadImage2x("gfx/main/hubArrowLeft2.png"), 60);
+	hubArrows->setFrame(2, graphics.loadImage2x("gfx/main/hubArrowRight.png"), 60);
+	hubArrows->setFrame(3, graphics.loadImage2x("gfx/main/hubArrowRight2.png"), 60);
 
 	List hubList;
 	HubLevel *hubPoint;
