@@ -58,6 +58,9 @@ void Game::clear()
 	autoSaveSlot = 0;
 
 	currentWeapon = 0;
+	equippedWeapons[0] = WP_PISTOL;
+	equippedWeapons[1] = -1;
+	activeSlot = 0;
 	for (int i = 0 ; i < MAX_WEAPONS ; i++)
 	{
 		bulletsHit[i] = bulletsFired[i] = 0;

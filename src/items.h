@@ -37,3 +37,9 @@ extern Entity player;
 extern Entity defItem[MAX_ITEMS];
 extern GameData gameData;
 extern Weapon weapon[MAX_WEAPONS];
+
+// Weapon swap dialog state (defined in player.cpp)
+extern bool weaponSwapPending;
+extern int  weaponSwapId;
+extern float weaponSwapItemX;
+extern float weaponSwapItemY;

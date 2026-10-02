@@ -47,6 +47,11 @@ bool playerReloading = false;
 int playerReloadTotal = 0;
 static const int RELOAD_MULTIPLIER = 3;
 
+// Weapon slot swap dialog
+bool weaponSwapPending = false;
+int  weaponSwapId      = -1;
+extern void consumeWeaponSwapItem();
+
 // Limited-use weapons: a fixed number of shots per pickup, then back to the pistol
 static const int WEAPON_PLAYER_ROCKET = 21; // player rocket launcher (data/weapons)
 static const int WEAPON_PLAYER_PLASMA = 22; // player plasma rifle (data/weapons)
@@ -305,6 +310,21 @@ void checkPlayerBulletCollisions(Entity *bullet)
 	}
 }
 
+// ── Weapon slot helpers ────────────────────────────────────────────────────
+
+// Switch the active weapon slot to `slot` (0 or 1) if it holds a weapon.
+static void switchToSlot(int slot)
+{
+	if (game.equippedWeapons[slot] == -1)
+		return;
+	game.activeSlot  = (signed char)slot;
+	game.currentWeapon = (unsigned char)game.equippedWeapons[slot];
+	player.currentWeapon = &weapon[game.currentWeapon];
+	resetPlayerAmmo();
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+
 void doPlayer()
 {
 	if (engine.cheatHealth)
@@ -541,17 +561,7 @@ void doPlayer()
 	}
 	
 	#if DEBUG
-	if (engine.keyState[SDL_SCANCODE_1])
-	{
-		player.currentWeapon = &weapon[WP_PISTOL];
-		resetPlayerAmmo();
-	}
-	else if (engine.keyState[SDL_SCANCODE_2])
-	{
-		player.currentWeapon = &weapon[WP_MACHINEGUN];
-		resetPlayerAmmo();
-	}
-	else if (engine.keyState[SDL_SCANCODE_3])
+	if (engine.keyState[SDL_SCANCODE_3])
 	{
 		player.currentWeapon = &weapon[WP_GRENADES];
 		resetPlayerAmmo();
@@ -567,7 +577,51 @@ void doPlayer()
 		resetPlayerAmmo();
 	}
 	#endif
-	
+
+	// ── Weapon swap selection ────────────────────────────────────────────────
+	// When the player picks up a weapon with both slots full, a message is shown
+	// via setInfoMessage. The player can press 1 or 2 to replace a slot.
+	if (weaponSwapPending)
+	{
+		if (engine.keyState[SDL_SCANCODE_1])
+		{
+			engine.keyState[SDL_SCANCODE_1] = 0;
+			game.equippedWeapons[0] = (signed char)weaponSwapId;
+			consumeWeaponSwapItem();
+			switchToSlot(0);
+		}
+		else if (engine.keyState[SDL_SCANCODE_2])
+		{
+			engine.keyState[SDL_SCANCODE_2] = 0;
+			game.equippedWeapons[1] = (signed char)weaponSwapId;
+			consumeWeaponSwapItem();
+			switchToSlot(1);
+		}
+	}
+
+	// ── Mouse-wheel: cycle between the two slots ──────────────────────────
+	if (engine.mouseWheel != 0)
+	{
+		if (game.equippedWeapons[1] != -1)   // only useful with 2 weapons
+		{
+			int next = (game.activeSlot + (engine.mouseWheel > 0 ? 1 : -1) + 2) % 2;
+			switchToSlot(next);
+		}
+		engine.mouseWheel = 0;
+	}
+
+	// ── Keys 1 / 2: select slot directly ─────────────────────────────────
+	if (engine.keyState[SDL_SCANCODE_1])
+	{
+		engine.keyState[SDL_SCANCODE_1] = 0;
+		switchToSlot(0);
+	}
+	else if (engine.keyState[SDL_SCANCODE_2])
+	{
+		engine.keyState[SDL_SCANCODE_2] = 0;
+		switchToSlot(1);
+	}
+
 	float preMoveDY = player.dy;
 
 	moveEntity(&player);
@@ -617,12 +671,25 @@ void doPlayer()
 
 	updatePlayerReload();
 
-	// Limited-use weapons (grenades, rocket launcher): once the last shot is spent, back to the pistol
+	// Limited-use weapons (grenades, rocket launcher): once the last shot is spent,
+	// fall back to the other equipped slot if it has a weapon, otherwise the pistol.
 	if ((getLimitedShots() > 0) && (playerAmmo == 0))
 	{
-		player.currentWeapon = &weapon[WP_PISTOL];
-		game.currentWeapon = WP_PISTOL;
-		resetPlayerAmmo();
+		int other = 1 - game.activeSlot;
+		if (game.equippedWeapons[other] != -1)
+		{
+			switchToSlot(other);
+		}
+		else
+		{
+			game.equippedWeapons[game.activeSlot] = -1;
+			// Ensure at least the pistol is in slot 0
+			game.equippedWeapons[0] = WP_PISTOL;
+			game.activeSlot = 0;
+			game.currentWeapon = WP_PISTOL;
+			player.currentWeapon = &weapon[WP_PISTOL];
+			resetPlayerAmmo();
+		}
 		player.reload = player.currentWeapon->reload;
 	}
 

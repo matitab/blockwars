@@ -54,6 +54,94 @@ static int getWeaponIdFromItem(int itemId)
 	return itemId;
 }
 
+/*
+Weapon swap (both slots full): the swap stays pending only while the player
+is standing on the weapon item. pickUpItem() runs every frame while they
+overlap and marks weaponSwapTouched; doItems() cancels the swap on the first
+frame it is not marked.
+*/
+static const char *WEAPON_SWAP_MESSAGE = "Press 1 or 2 to replace weapon";
+Entity *weaponSwapItem = NULL;
+static bool weaponSwapTouched = false;
+
+static bool isWeaponItem(int itemId)
+{
+	switch (itemId)
+	{
+		case ITEM_PISTOL:
+		case ITEM_MACHINEGUN:
+		case ITEM_LASER:
+		case ITEM_GRENADES:
+		case ITEM_SPREAD:
+		case ITEM_ROCKET_LAUNCHER:
+		case ITEM_PLASMA_GUN:
+			return true;
+	}
+
+	return false;
+}
+
+void cancelWeaponSwap()
+{
+	weaponSwapPending = false;
+	weaponSwapId      = -1;
+	weaponSwapItem    = NULL;
+
+	// Remove the swap message right away, but only if it is the one on screen
+	if (strcmp(engine.message, WEAPON_SWAP_MESSAGE) == 0)
+	{
+		engine.message[0] = 0;
+		engine.messageTime = -1;
+	}
+}
+
+// Called when the player chooses slot 1 or 2: the weapon item is consumed
+void consumeWeaponSwapItem()
+{
+	Entity *item = weaponSwapItem;
+
+	cancelWeaponSwap();
+
+	if (item == NULL)
+	{
+		return;
+	}
+
+	if (item->flags & ENT_DYING)
+	{
+		game.totalBonusesCollected++;
+	}
+
+	item->health = 10;
+	item->flags = ENT_WEIGHTLESS + ENT_DYING + ENT_NOCOLLISIONS;
+	item->dx = 0;
+	item->dy = -5;
+	audio.playSound(SND_GETWEAPON, CH_ITEM, item->x);
+
+	// Another weapon item under the player (overlapping items): offer it right away
+	Entity *other = (Entity*)map.itemList.getHead();
+
+	while (other->next != NULL)
+	{
+		other = (Entity*)other->next;
+
+		if ((other == item) || (!(other->flags & ENT_COLLECTABLE)) || (other->owner != other) || (!isWeaponItem(other->id)))
+		{
+			continue;
+		}
+
+		if (Collision::collision(&player, other))
+		{
+			weaponSwapPending = true;
+			weaponSwapId      = getWeaponIdFromItem(other->id);
+			weaponSwapItem    = other;
+			weaponSwapTouched = true;
+			engine.setInfoMessage(WEAPON_SWAP_MESSAGE, 0, INFO_NORMAL);
+			break;
+		}
+	}
+}
+
 void addItem(int itemType, const char *name, int x, int y, const char *spriteName, int health, int value, int flags, bool randomMovement)
 {
 	Entity *item = new Entity();
@@ -267,6 +355,18 @@ void pickUpItem(Entity *item)
 {
 	char string[100];
 
+	// Both slots full: wait for the player to press 1 or 2 while standing on the item.
+	// Nothing about the item is modified here, so it stays collectable.
+	if ((isWeaponItem(item->id)) && (game.equippedWeapons[0] != -1) && (game.equippedWeapons[1] != -1))
+	{
+		weaponSwapPending = true;
+		weaponSwapId      = getWeaponIdFromItem(item->id);
+		weaponSwapItem    = item;
+		weaponSwapTouched = true;
+		engine.setInfoMessage(WEAPON_SWAP_MESSAGE, 0, INFO_NORMAL);
+		return;
+	}
+
 	if (item->flags & ENT_DYING)
 	{
 		game.totalBonusesCollected++;
@@ -293,10 +393,28 @@ void pickUpItem(Entity *item)
 		case ITEM_PLASMA_GUN:
 		{
 			int weaponId = getWeaponIdFromItem(item->id);
-			player.currentWeapon = &weapon[weaponId];
-			game.currentWeapon = weaponId;
-			resetPlayerAmmo();
-			audio.playSound(SND_GETWEAPON, CH_ITEM, item->x);
+			int active = game.activeSlot;
+			int other  = 1 - active;
+
+			// Place in the active slot if empty, otherwise in the other slot if empty
+			if (game.equippedWeapons[active] == -1)
+			{
+				game.equippedWeapons[active] = (signed char)weaponId;
+				game.currentWeapon = (unsigned char)game.equippedWeapons[game.activeSlot];
+				player.currentWeapon = &weapon[game.currentWeapon];
+				resetPlayerAmmo();
+				audio.playSound(SND_GETWEAPON, CH_ITEM, item->x);
+			}
+			else if (game.equippedWeapons[other] == -1)
+			{
+				game.equippedWeapons[other] = (signed char)weaponId;
+				// Switch to the newly filled slot so the player gets the new weapon immediately
+				game.activeSlot = (signed char)other;
+				game.currentWeapon = (unsigned char)game.equippedWeapons[game.activeSlot];
+				player.currentWeapon = &weapon[game.currentWeapon];
+				resetPlayerAmmo();
+				audio.playSound(SND_GETWEAPON, CH_ITEM, item->x);
+			}
 			break;
 		}
 		case ITEM_POINTS:
@@ -425,6 +543,8 @@ void doItems()
 {
 	Entity *item = (Entity*)map.itemList.getHead();
 
+	weaponSwapTouched = false;
+
 	while (item->next != NULL)
 	{
 		Entity *previous = item;
@@ -477,9 +597,20 @@ void doItems()
 
 		if ((item->health <= 0) && (item->owner != &player))
 		{
+			if (item == weaponSwapItem)
+			{
+				cancelWeaponSwap();
+			}
+
 			map.itemList.remove(previous, item);
 			item = previous;
 		}
+	}
+
+	// The player stepped away from the weapon item (or it is gone)
+	if ((weaponSwapPending) && (!weaponSwapTouched))
+	{
+		cancelWeaponSwap();
 	}
 }
 

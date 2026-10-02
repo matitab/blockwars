@@ -1,0 +1,34 @@
+"Grasslands MIAs" "MIAs" 5 8
+"Grasslands" "Find the Transmitter" 1 1
+"Grasslands" "Defeat 50 Enemies" 50 50
+"Grasslands" "MIA_Lister" 1 1
+"Grasslands" "MIA_Rimmer" 1 1
+"Grasslands" "MIA_Cat" 0 1
+"Grasslands" "MIA_Kryten" 0 1
+"Grasslands" "MIA_Kochanski" 1 1
+"Grasslands" "MIA_Holly" 1 1
+"Grasslands" "MIA_Ace" 0 1
+"Grasslands" "MIA_Dwayne" 1 1
+"@EOF@" "@EOF@" -1 -1
+Grasslands
+19
+M START 4768 7840
+M ENEMY "Pistol Blob" 1088 9242
+M ENEMY "Pistol Blob" 1088 9251
+M ENEMY "Pistol Blob" 1696 9251
+M ENEMY "Pistol Blob" 5056 8711
+M ENEMY "Eye Droid V1.0" 3002 7783
+M ENEMY "Eye Droid V1.0" 3552 7786
+M ENEMY "Eye Droid V1.0" 5738 8197
+M ENEMY "Eye Droid V2.0" 4888 7196
+M ENEMY "Eye Droid V1.0" 4605 8895
+M SWITCH "Switch" TRAIN2 "@none@" "Lift Activated" SWT_USED 2880 9024 ACTIVE
+M TRAIN TRAIN1 2760 8830 2760 9050 120 TR_AT_END ACTIVE
+M TRAIN TRAIN2 3000 8830 3000 9050 120 TR_AT_END ACTIVE
+M TRAIN TRAIN3 3970 8850 3970 9070 120 TR_AT_END ACTIVE
+M TRAIN TRAIN4 4976 8896 4976 9056 120 TR_AT_END ACTIVE
+M DOOR DOOR1 TR_DOOR 3529 8710 3529 8768 ACTIVE
+M SPAWNPOINT ENEMY -1 -1 SPW_ENEMY SPW_NOSUBTYPE 30 40 ACTIVE
+M SPAWNABLE_ENEMY "Pistol Blob"
+M SPAWNABLE_ENEMY "Eye Droid V1.0"
+@EOF@

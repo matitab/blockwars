@@ -3,6 +3,7 @@
 "Aqua Blob" AquaBlobRight AquaBlobLeft AquaBlobDeath "Aimed Pistol" 2 50 ENT_AIMS+ENT_SWIMS
 "Laser Blob" LaserBlobRight LaserBlobLeft LaserBlobDeath "Alien Laser Cannon" 3 50 0
 "Machine Gun Blob" MachineBlobRight MachineBlobLeft MachineBlobDeath "Machine Gun" 3 50 ENT_RAPIDFIRE
+"BioMech Soldier" BiomechRight BiomechLeft BiomechDeath "Alien Laser Cannon" 6 80 ENT_AIMS+ENT_ALWAYSCHASE
 
 "Eye Droid V1.0" PistolDroidRight PistolDroidLeft PistolDroidDeath "Droid Laser" 4 50 ENT_AIMS+ENT_FLIES+ENT_EXPLODES
 "Eye Droid V2.0" MachineDroidRight MachineDroidLeft MachineDroidDeath "Droid Laser" 5 50 ENT_AIMS+ENT_MULTIEXPLODE+ENT_FLIES+ENT_EXPLODES

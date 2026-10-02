@@ -47,6 +47,7 @@ class Engine {
 
 		char keyState[SDL_NUM_SCANCODES];
 		char mouseLeft, mouseRight;
+		int mouseWheel; // +1 = scroll up, -1 = scroll down, 0 = no scroll
 		
 		int joyX, joyY;
 		int joyprevX, joyprevY;

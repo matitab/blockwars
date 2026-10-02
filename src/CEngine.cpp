@@ -36,6 +36,7 @@ Engine::Engine()
 	joyX = joyY = 0;
 
 	mouseLeft = mouseRight = 0;
+	mouseWheel = 0;
 	mouseX = mouseY = 0;
 	waitForButton = false;
 	waitForKey = false;
@@ -179,6 +180,11 @@ void Engine::getInput()
 			case SDL_MOUSEBUTTONUP:
 				if (event.button.button == SDL_BUTTON_LEFT) mouseLeft = 0;
 				if (event.button.button == SDL_BUTTON_RIGHT) mouseRight = 0;
+				break;
+
+			case SDL_MOUSEWHEEL:
+				if (event.wheel.y > 0) mouseWheel = 1;
+				else if (event.wheel.y < 0) mouseWheel = -1;
 				break;
 
 			case SDL_MOUSEMOTION:

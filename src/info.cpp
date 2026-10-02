@@ -172,10 +172,54 @@ void doStatusBar()
 		}
 	}
 
-	static Graphics::SurfaceCache weaponCache;
-	snprintf(string, sizeof string, "%s %s", _("Weapon:"), _(player.currentWeapon->name));
-	graphics.drawString(string, graphics.logicalW() - 10, 5, TXT_RIGHT, graphics.screen, weaponCache);
-	
+	// ── Weapon slot HUD (top-right) ───────────────────────────────────────
+	// Shows up to two equipped weapon slots; the active one is highlighted.
+	{
+		const int slotW  = 120;  // width of each slot label
+		const int slotH  = 18;
+		const int margin = 4;
+		const int right  = graphics.logicalW() - 6;
+
+		graphics.setFontSize(0);
+
+		for (int s = 1; s >= 0; s--)  // draw slot 2 first (leftmost), then slot 1
+		{
+			int weapId = game.equippedWeapons[s];
+			if (weapId < 0) continue;   // empty slot — skip
+
+			bool active = (game.activeSlot == s);
+			int x = right - (1 - s) * (slotW + margin);
+			int y = 2;
+
+			// Background highlight for the active slot
+			if (active)
+			{
+				graphics.drawRect(x - slotW, y, slotW, slotH,
+				                  graphics.darkGrey, graphics.white, graphics.screen);
+			}
+			else
+			{
+				graphics.drawRect(x - slotW, y, slotW, slotH,
+				                  graphics.black, graphics.grey, graphics.screen);
+			}
+
+			// Slot number + weapon name
+			static Graphics::SurfaceCache slotCache[2];
+			char slotStr[64];
+			snprintf(slotStr, sizeof slotStr, "[%d] %s", s + 1, _(weapon[weapId].name));
+
+			if (active)
+				graphics.setFontColor(0xff, 0xee, 0x44, 0x00, 0x00, 0x00);
+			else
+				graphics.setFontColor(0xaa, 0xaa, 0xaa, 0x00, 0x00, 0x00);
+
+			graphics.drawString(slotStr, x - 4, y + 2, TXT_RIGHT,
+			                    graphics.screen, slotCache[s]);
+		}
+
+		graphics.setFontColor(0xff, 0xff, 0xff, 0x00, 0x00, 0x00);
+	}
+
 	if (game.skill == 3)
 	{
 		snprintf(string, sizeof string, _("Time Remaining: %.2d:%.2d"), map.remainingMinutes, map.remainingSeconds);

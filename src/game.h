@@ -55,6 +55,7 @@ extern void dropCarriedItems();
 
 extern void resetPlayer();
 extern void gibPlayer();
+extern void resetPlayerAmmo();
 
 extern void addTeleportParticles(float x, float y, int amount, int soundToPlay);
 

@@ -27,6 +27,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 extern bool planEnemyGrenade(Entity *owner, float *power);
 extern void addEnemyGrenade(Entity *owner, float power);
 extern void addEnemyAimedShot(Entity *owner, float angleDegrees);
+extern void throwAndDamageEntity(Entity *ent, int damage, int minDX, int maxDX, int DY);
 // Eye Droid beam (bullets.cpp): one damage tick, delivered through the normal bullet collisions
 extern void addDroidBeamHit(Entity *owner, float x, float y, int damage);
 
@@ -98,8 +99,23 @@ struct EnemyAIState
 	int shotEvadeTimer; // frames spent moving out of a player's shot line
 	int shotEvadeCooldown; // frames before reacting to another shot
 	int shotEvadeX, shotEvadeY; // temporary target perpendicular to the shot line
+	int ledgeJumpTimer;
+	int jumpTimer; // frames left of a ground jump whose horizontal speed must survive the per-frame dx reset
+	float jumpDX; // that horizontal speed
+	int climbTimer; // BioMech climbing out of acid: frames left (it keeps going after the liquid is behind it)
+	int climbDir; // -1 / 1: side of the wall it climbs
+	int climbTopY; // y the body must reach to clear the top of that wall
+	int biomechReloadTimer;
+	int biomechVolleyCooldown;
+	int biomechShotsLeft;
+	int biomechShotTimer;
+	int biomechTelegraph;
+	int biomechAttackAnimTimer;
+	int biomechMeleeParticleTimer;
+	int biomechMeleeCooldown;
+	float biomechAimX, biomechAimY;
 
-	EnemyAIState() : telegraph(0), fireNow(false), fireTimeout(0), awareness(0), lostSight(0), alerted(false), canSee(false), lastX(0), lastY(0), prevX(0), stuck(0), maxHealth(0), burstLeft(0), burstTimeout(0), attackStamp(0), rank(0), squadLeader(NULL), confused(0), panicDir(1), grenadeX(0), grenadeY(0), grenadeTimer(0), telegraphTotal(0), charging(false), utilityDroid(false), shield(0), maxShield(0), dashes(0), rechargeTimer(0), stagger(0), safeMode(false), dashCooldown(0), dashReact(false), staggerImmune(0), lastDir(0), searching(false), searchX(0), searchDir(0), searchWait(0), energy(0.0f), maxEnergy(0.0f), laserMode(0), volleyMode(0), volleyTotal(0), volleyIndex(0), sweepDir(1), beamDir(1), beamTimer(0), beamTotal(0), beamTick(0), beamAngle(0.0f), beamStep(0.0f), beamLen(0.0f), hasCover(false), coverX(0), coverY(0), coverRetry(0), coverCheck(0), coverTimer(0), snapX(0), snapY(0), hasBadCover(false), badCoverX(0), badCoverY(0), shotEvadeTimer(0), shotEvadeCooldown(0), shotEvadeX(0), shotEvadeY(0) {}
+	EnemyAIState() : telegraph(0), fireNow(false), fireTimeout(0), awareness(0), lostSight(0), alerted(false), canSee(false), lastX(0), lastY(0), prevX(0), stuck(0), maxHealth(0), burstLeft(0), burstTimeout(0), attackStamp(0), rank(0), squadLeader(NULL), confused(0), panicDir(1), grenadeX(0), grenadeY(0), grenadeTimer(0), telegraphTotal(0), charging(false), utilityDroid(false), shield(0), maxShield(0), dashes(0), rechargeTimer(0), stagger(0), safeMode(false), dashCooldown(0), dashReact(false), staggerImmune(0), lastDir(0), searching(false), searchX(0), searchDir(0), searchWait(0), energy(0.0f), maxEnergy(0.0f), laserMode(0), volleyMode(0), volleyTotal(0), volleyIndex(0), sweepDir(1), beamDir(1), beamTimer(0), beamTotal(0), beamTick(0), beamAngle(0.0f), beamStep(0.0f), beamLen(0.0f), hasCover(false), coverX(0), coverY(0), coverRetry(0), coverCheck(0), coverTimer(0), snapX(0), snapY(0), hasBadCover(false), badCoverX(0), badCoverY(0), shotEvadeTimer(0), shotEvadeCooldown(0), shotEvadeX(0), shotEvadeY(0), ledgeJumpTimer(0), jumpTimer(0), jumpDX(0), climbTimer(0), climbDir(0), climbTopY(0), biomechReloadTimer(0), biomechVolleyCooldown(0), biomechShotsLeft(0), biomechShotTimer(0), biomechTelegraph(0), biomechAttackAnimTimer(0), biomechMeleeParticleTimer(0), biomechMeleeCooldown(0), biomechAimX(0.0f), biomechAimY(0.0f) {}
 };
 
 static std::map<Entity*, EnemyAIState> aiState;
@@ -167,6 +183,20 @@ static const float LASER_BEAM_HALF_WIDTH = 55.0f; // pixels around the player th
 static const float LASER_BEAM_MIN_ANGLE = 4.0f;   // degrees, half width of the sweep
 static const float LASER_BEAM_MAX_ANGLE = 25.0f;
 
+static const char *BIOMECH_SOLDIER_NAME = "BioMech Soldier";
+static const char *BIOMECH_MINIBOSS_NAME = "BioMech Mini Boss";
+static const int BIOMECH_LASER_CLIP_SIZE = 12;
+static const int BIOMECH_LASER_BURST_SHOTS = 3;
+static const int BIOMECH_LASER_SHOT_GAP = 8;
+static const int BIOMECH_LASER_BURST_INTERVAL = MAX_FPS * 2;
+static const int BIOMECH_LASER_RELOAD = MAX_FPS * 10;
+static const int BIOMECH_LASER_WINDUP = 24;
+static const int BIOMECH_ATTACK_ANIMATION_FRAMES = 24;
+static const int BIOMECH_MELEE_DAMAGE = 2;
+static const int BIOMECH_MELEE_PARTICLE_RANGE = 128;
+static const int BIOMECH_MELEE_PARTICLE_GAP = 8;
+static const int BIOMECH_MELEE_COOLDOWN = MAX_FPS;
+
 // Utility droid (the common Eye Droid): electromagnetic shield, dash pool and recharge
 static const char *UTILITY_DROID_NAME = "Eye Droid V1.0";
 static const int DROID_SHIELD_POINTS = 5;       // shield points at spawn
@@ -220,6 +250,53 @@ static EnemyAIState &getAIState(Entity *enemy)
 static bool isUtilityDroid(Entity *enemy)
 {
 	return (strcmp(enemy->name, UTILITY_DROID_NAME) == 0);
+}
+
+static bool isBiomechSoldier(Entity *enemy)
+{
+	return (strcmp(enemy->name, BIOMECH_SOLDIER_NAME) == 0) || (strcmp(enemy->name, BIOMECH_MINIBOSS_NAME) == 0);
+}
+
+// BioMechs get ENT_SWIMS at spawn so they can swim, but out of the liquid they have to move like a
+// ground enemy (walk, fall, jump, drop off ledges). Treating ENT_SWIMS as "always a swimmer" made every
+// jump rule bail out and overwrote dy each frame, so they could never jump.
+static bool isBiomechOnLand(Entity *enemy)
+{
+	return isBiomechSoldier(enemy) &&
+	       (enemy->environment != ENV_WATER) &&
+	       (enemy->environment != ENV_SLIME) &&
+	       (enemy->environment != ENV_LAVA);
+}
+
+// True when the enemy should use swim movement (free vertical movement toward ty) right now
+static bool usesSwimMovement(Entity *enemy)
+{
+	return ((enemy->flags & ENT_SWIMS) != 0) && (!isBiomechOnLand(enemy));
+}
+
+// Used by entities.cpp (moveEntity / brick contact), which can't see the static helpers above
+bool entityIsBiomech(Entity *ent)
+{
+	return isBiomechSoldier(ent);
+}
+
+bool entityIsBiomechOnLand(Entity *ent)
+{
+	return isBiomechOnLand(ent);
+}
+
+// Every ground jump uses the same takeoff speed, and keeps its horizontal speed for the whole flight.
+// doAI rewrites dx every frame (+-1 toward tx), so without jumpDX only the ledge jump (dx = 4) covered
+// any distance and the rest rose to full height but barely moved sideways.
+static const float GROUND_JUMP_DY = -12.0f;
+static const float GROUND_JUMP_DX = 3.0f;
+static const int GROUND_JUMP_MAX_FRAMES = 90;
+
+static void startGroundJump(Entity *enemy, EnemyAIState &ai, float dx)
+{
+	enemy->setVelocity(dx, GROUND_JUMP_DY);
+	ai.jumpDX = dx;
+	ai.jumpTimer = (dx != 0) ? GROUND_JUMP_MAX_FRAMES : 0;
 }
 
 // Gives a freshly spawned utility droid its full shield and dash pool
@@ -310,7 +387,6 @@ static bool isGrenadeWeapon(Entity *enemy)
 static bool isGrenadeSafe(Entity *enemy)
 {
 	EnemyAIState &st = getAIState(enemy);
-	Weapon *w = enemy->currentWeapon;
 	int grenadeRadius = 50; // standard grenade explosion radius
 
 	// Check if cooldown hasn't expired (strategic: wait for previous grenade to explode)
@@ -351,6 +427,59 @@ static bool isGrenadeSafe(Entity *enemy)
 }
 
 // Check if there's a player grenade nearby and move away from it
+static bool avoidPlayerGrenade(Entity *enemy)
+{
+	Entity *bullet = (Entity*)map.bulletList.getHead();
+	int safeDistance = 150;
+
+	while (bullet->next != NULL)
+	{
+		bullet = (Entity*)bullet->next;
+
+		// Only care about player's grenades
+		if (bullet->owner != &player)
+			continue;
+
+		if (!(bullet->flags & ENT_EXPLODES))
+			continue;
+
+		// Check distance to this grenade
+		float dx = fabs(enemy->x - bullet->x);
+		float dy = fabs(enemy->y - bullet->y);
+
+		if ((dx < safeDistance) && (dy < safeDistance))
+		{
+			// Move away from the grenade
+			if (bullet->x < enemy->x)
+				enemy->tx = (int)(enemy->x + 100);
+			else
+				enemy->tx = (int)(enemy->x - 100);
+
+			return true; // avoiding a grenade
+		}
+	}
+
+	return false; // no grenades nearby
+}
+
+// Check if BioMech can climb walls (is against a solid wall)
+static bool canClimbWall(Entity *enemy)
+{
+	if (!isBiomechSoldier(enemy))
+		return false;
+
+	// Check tiles to left and right
+	int tileXLeft = (int)(enemy->x - 5) >> BRICKSHIFT;
+	int tileXRight = (int)(enemy->x + enemy->width + 5) >> BRICKSHIFT;
+	int tileYTop = (int)(enemy->y) >> BRICKSHIFT;
+
+	// Check if there's a solid wall on either side
+	bool wallLeft = (tileXLeft >= 0) && map.isSolid(tileXLeft, tileYTop);
+	bool wallRight = (tileXRight < MAPWIDTH) && map.isSolid(tileXRight, tileYTop);
+
+	return (wallLeft || wallRight);
+}
+
 // Movement priorities. When several rules want to move an enemy in the same frame
 // the highest priority wins; on a tie the rule asked last wins. The base destinations
 // (last seen point, confusion, getting unstuck) are written straight to tx earlier in
@@ -362,6 +491,7 @@ static const int MOVE_PRIO_COVER = 2;      // safe mode: go to cover (shares the
 static const int MOVE_PRIO_SEPARATION = 3; // don't stack on other enemies
 static const int MOVE_PRIO_SHOT_EVADE = 4;  // move out of a player's shot line
 static const int MOVE_PRIO_GRENADE = 5;    // get away from a grenade (survival)
+static const int MOVE_PRIO_ESCAPE  = 6;    // BioMech: get out of acid/slime (top priority)
 static const int SHOT_EVADE_COOLDOWN = MAX_FPS;
 static const int SHOT_EVADE_FRAMES = 60;
 static const int SHOT_EVADE_DISTANCE = 80;
@@ -396,43 +526,8 @@ struct MoveProposal
 	}
 };
 
-static bool avoidPlayerGrenade(Entity *enemy, MoveProposal &mv)
-{
-	Entity *bullet = (Entity*)map.bulletList.getHead();
-	int grenadeRadius = 50;
-	int safeDistance = 150;
-
-	while (bullet->next != NULL)
-	{
-		bullet = (Entity*)bullet->next;
-
-		// Only care about player's grenades
-		if (bullet->owner != &player)
-			continue;
-
-		if (!(bullet->flags & ENT_EXPLODES))
-			continue;
-
-		// Check distance to this grenade
-		float dx = fabs(enemy->x - bullet->x);
-		float dy = fabs(enemy->y - bullet->y);
-
-		if ((dx < safeDistance) && (dy < safeDistance))
-		{
-			// Move away from the grenade
-			if (bullet->x < enemy->x)
-				mv.propose(MOVE_PRIO_GRENADE, (int)(enemy->x + 100));
-			else
-				mv.propose(MOVE_PRIO_GRENADE, (int)(enemy->x - 100));
-
-			return true; // avoiding a grenade
-		}
-	}
-
-	return false; // no grenades nearby
-}
-
 // ---------------------------------------------------------------------------
+
 // Ranks & squads. Only ground blobs with a low base health can be promoted.
 //   Soldier : base hp (from defEnemies)
 //   Veteran : base + 2 hp, longer bursts, shorter warning, always shows a health bar
@@ -728,6 +823,12 @@ static Entity *spawnEnemyEntity(const char *name, int x, int y, int flags)
 
 	enemy->flags |= flags;
 
+	// BioMech Soldier can swim and climb walls
+	if (isBiomechSoldier(enemy))
+	{
+		Math::addBit(&enemy->flags, ENT_SWIMS);
+	}
+
 	EnemyAIState &spawnState = getAIState(enemy);
 	spawnState.maxHealth = enemy->health;
 	initUtilityDroid(enemy, spawnState);
@@ -784,6 +885,39 @@ static bool isGoodEscortSpot(int px, int py)
 
 		if (map.isSolid(tx, ty + i))
 			return true;
+	}
+
+	return false;
+}
+
+static bool hasNearbyJumpPlatform(Entity *enemy, int direction, int edgeX, int feetY)
+{
+	int heightTiles = (enemy->height + BRICKSIZE - 1) >> BRICKSHIFT;
+
+	for (int distance = 0 ; distance <= 4 ; distance++)
+	{
+		int platformX = edgeX + (direction * distance);
+
+		for (int rise = 0 ; rise <= 4 ; rise++)
+		{
+			int platformY = feetY - rise;
+
+			if (!map.isSolid(platformX, platformY))
+				continue;
+
+			bool clearAbove = true;
+			for (int tile = 1 ; tile <= heightTiles ; tile++)
+			{
+				if (map.isSolid(platformX, platformY - tile))
+				{
+					clearAbove = false;
+					break;
+				}
+			}
+
+			if (clearAbove)
+				return true;
+		}
 	}
 
 	return false;
@@ -1780,7 +1914,7 @@ void lookForPlayer(Entity *enemy)
 	bool canSee = isLeader ? st.canSee : hasClearShot(enemy);
 
 	// followers have no awareness of their own: they always act alert
-	bool alert = (!isLeader) || (st.awareness >= AWARE_ALERT);
+	bool alert = (!isLeader) || (st.awareness >= AWARE_ALERT) || isBiomechSoldier(enemy);
 
 	// lost sight of the player: give up the burst
 	if (!canSee)
@@ -1817,7 +1951,7 @@ void lookForPlayer(Entity *enemy)
 	}
 
 	// can't fire while reloading, but keep chasing/turning. Only alert enemies attack.
-	if ((enemy->reload <= 0) && (alert || (enemy->flags & ENT_ALWAYSFIRES)))
+	if ((!isBiomechSoldier(enemy)) && (enemy->reload <= 0) && (alert || (enemy->flags & ENT_ALWAYSFIRES)))
 	{
 		float aimDY = getAimDY(enemy);
 
@@ -2021,7 +2155,7 @@ void lookForPlayer(Entity *enemy)
 	if ((st.telegraph > 0) || (st.burstLeft > 0) || (st.beamTimer > 0))
 		return;
 
-	if ((enemy->flags & ENT_FLIES) || (enemy->flags & ENT_SWIMS) || (enemy->flags & ENT_NOJUMP))
+	if ((enemy->flags & ENT_FLIES) || usesSwimMovement(enemy) || (enemy->flags & ENT_NOJUMP))
 		return;
 		
 	if (enemy->flags & ENT_JUMPS)
@@ -2031,7 +2165,7 @@ void lookForPlayer(Entity *enemy)
 			if ((Math::prand() % 25) == 0)
 			{
 				int distance = Math::rrand(1, 4);
-				enemy->setVelocity(distance - ((distance * 2) * enemy->face), Math::rrand(-12, -10));
+				startGroundJump(enemy, st, (float)(distance - ((distance * 2) * enemy->face)));
 			}
 		}
 		
@@ -2054,9 +2188,19 @@ void lookForPlayer(Entity *enemy)
 			{
 				int direction = (player.x < enemy->x) ? -1 : 1;
 				int speed = Math::rrand(2, 4);
-				enemy->setVelocity(direction * speed, Math::rrand(-12, -10));
+				startGroundJump(enemy, st, (float)(direction * speed));
 			}
 		}
+	}
+
+	// BioMech chasing Bob downward: player is on a lower platform.
+	// Push the biome toward the edge so the doAI() drop-down logic fires.
+	if (isBiomechSoldier(enemy) && (player.y > enemy->y + enemy->height + 16))
+	{
+		// Set destination directly to the player's position — doAI() will walk
+		// the enemy to the edge of its current platform and then drop off it.
+		enemy->tx = (int)player.x;
+		enemy->ty = (int)player.y;
 	}
 }
 
@@ -2075,6 +2219,28 @@ static bool hasSomethingBelow(int px, int py, int w, int h)
 			if (map.isSolid(tx, ty) || map.isLiquid(tx, ty))
 				return true;
 		}
+	}
+
+	return false;
+}
+
+// BioMechs prefer to stay on dry ground. Walking off a ledge is only OK when the column of tiles just past
+// the edge ends on SOLID ground (not acid/lava/water, not a bottomless gap) within BIOMECH_MAX_DROP_TILES.
+// startRow is the first row to look at (the row under the feet).
+static const int BIOMECH_MAX_DROP_TILES = 10;
+
+static bool hasDryLandingBelow(int tileX, int startRow)
+{
+	if ((tileX < 0) || (tileX >= MAPWIDTH))
+		return false;
+
+	for (int row = startRow ; (row < MAPHEIGHT) && (row < (startRow + BIOMECH_MAX_DROP_TILES)) ; row++)
+	{
+		if (map.isSolid(tileX, row))
+			return true;
+
+		if (map.isLiquid(tileX, row))
+			return false;
 	}
 
 	return false;
@@ -2417,10 +2583,13 @@ static void startShotEvasion(Entity *enemy, EnemyAIState &ai, float dirX, float 
 	Math::limitInt(&ai.shotEvadeX, 15, (MAPWIDTH * BRICKSIZE) - 20);
 	Math::limitInt(&ai.shotEvadeY, 15, (MAPHEIGHT * BRICKSIZE) - 20);
 
-	if (enemy->flags & (ENT_FLIES|ENT_SWIMS))
+	if ((enemy->flags & ENT_FLIES) || usesSwimMovement(enemy))
 		enemy->ty = ai.shotEvadeY;
 	else if (!(enemy->flags & ENT_NOJUMP) && (!enemy->falling))
-		enemy->dy = Math::rrand(-120, -100) / 10.0f;
+	{
+		float side = (float)(ai.shotEvadeX - (int)enemy->x);
+		startGroundJump(enemy, ai, (side > 8.0f) ? GROUND_JUMP_DX : ((side < -8.0f) ? -GROUND_JUMP_DX : 0.0f));
+	}
 }
 
 static bool findIncomingPlayerShot(Entity *enemy, float *dirX, float *dirY)
@@ -2585,9 +2754,158 @@ static void updateDroidShield(Entity *enemy, EnemyAIState &ai)
 	}
 }
 
+static void updateBiomechCombat(Entity *enemy, EnemyAIState &ai)
+{
+	if (ai.maxEnergy <= 0.0f)
+	{
+		ai.maxEnergy = BIOMECH_LASER_CLIP_SIZE;
+		ai.energy = ai.maxEnergy;
+	}
+
+	if (ai.biomechReloadTimer > 0)
+	{
+		if (--ai.biomechReloadTimer == 0)
+			ai.energy = ai.maxEnergy;
+	}
+
+	if (ai.biomechVolleyCooldown > 0)
+		ai.biomechVolleyCooldown--;
+	if (ai.biomechShotTimer > 0)
+		ai.biomechShotTimer--;
+	if (ai.biomechAttackAnimTimer > 0)
+		ai.biomechAttackAnimTimer--;
+	if (ai.biomechMeleeParticleTimer > 0)
+		ai.biomechMeleeParticleTimer--;
+	if (ai.biomechMeleeCooldown > 0)
+		ai.biomechMeleeCooldown--;
+
+	if (ai.biomechTelegraph > 0)
+	{
+		ai.biomechTelegraph--;
+
+		if ((ai.biomechTelegraph % 4) == 0)
+		{
+			float muzzleX = enemy->x + (enemy->face ? 2 : enemy->width - 2);
+			float muzzleY = enemy->y + (enemy->height * 0.45f);
+			map.addParticle(muzzleX, muzzleY, Math::rrand(-10, 10) / 10.0f, Math::rrand(-20, 0) / 10.0f, 12, graphics.red, NULL, 0);
+		}
+
+		if (ai.biomechTelegraph == 0)
+			ai.biomechShotsLeft = BIOMECH_LASER_BURST_SHOTS;
+	}
+
+	bool laserBusy = (ai.biomechTelegraph > 0) || (ai.biomechShotsLeft > 0);
+	float playerX = player.x + (player.width / 2.0f);
+	float playerY = player.y + (player.height / 2.0f);
+	float meleeDX = playerX - (enemy->x + enemy->width / 2.0f);
+	float meleeDY = playerY - (enemy->y + enemy->height / 2.0f);
+	float meleeDistance = sqrtf((meleeDX * meleeDX) + (meleeDY * meleeDY));
+
+	if ((!laserBusy) && (player.health > 0) && (meleeDistance <= BIOMECH_MELEE_PARTICLE_RANGE))
+	{
+		if (ai.biomechMeleeParticleTimer == 0)
+		{
+			float clawX = enemy->x + (enemy->face ? 2 : enemy->width - 2);
+			float clawY = enemy->y + (enemy->height * 0.65f);
+			map.addParticle(clawX, clawY, (playerX > clawX) ? 1.2f : -1.2f, -0.8f, 18, graphics.red, NULL, 0);
+			map.addParticle(clawX, clawY - 4, (playerX > clawX) ? 0.8f : -0.8f, -1.4f, 14, graphics.yellow, NULL, 0);
+			ai.biomechMeleeParticleTimer = BIOMECH_MELEE_PARTICLE_GAP;
+		}
+
+		if ((ai.biomechMeleeCooldown == 0) && (player.immune == 0) && (game.missionOver == 0) && Collision::collision(enemy, &player))
+		{
+			throwAndDamageEntity(&player, BIOMECH_MELEE_DAMAGE, -6, 6, -8);
+			ai.biomechMeleeCooldown = BIOMECH_MELEE_COOLDOWN;
+			ai.biomechAttackAnimTimer = BIOMECH_ATTACK_ANIMATION_FRAMES;
+		}
+	}
+
+	if (ai.biomechShotsLeft > 0)
+	{
+		if (ai.biomechShotTimer == 0)
+		{
+			// The BioMech's shots are the Eye Droid's laser (same bullet: speed, damage, flags, sprite, sound).
+			// The weapon is swapped only while the shot is created, so the droid firing logic never sees it.
+			Weapon *ownWeapon = enemy->currentWeapon;
+			enemy->currentWeapon = &weapon[WEAPON_DROID_LASER];
+
+			float shotX = enemy->x + (enemy->width / 2.0f);
+			float shotY = enemy->y + (enemy->height / 2.0f);
+			float dx = ai.biomechAimX - shotX;
+			float dy = ai.biomechAimY - shotY;
+			float distance = sqrtf((dx * dx) + (dy * dy));
+
+			if (distance > 0.01f)
+			{
+				float speed = (float)abs(enemy->currentWeapon->getSpeed(enemy->face));
+				dx = (dx / distance) * speed;
+				dy = (dy / distance) * speed;
+			}
+			else
+			{
+				dx = (float)enemy->currentWeapon->getSpeed(enemy->face);
+				dy = 0.0f;
+			}
+
+			bool aimedWeapon = (enemy->flags & ENT_AIMS) != 0;
+			if (aimedWeapon)
+				Math::removeBit(&enemy->flags, ENT_AIMS);
+
+			addBullet(enemy, dx, dy);
+
+			enemy->currentWeapon = ownWeapon;
+
+			if (aimedWeapon)
+				Math::addBit(&enemy->flags, ENT_AIMS);
+
+			ai.energy -= 1.0f;
+			ai.biomechShotsLeft--;
+
+			if (ai.biomechShotsLeft > 0)
+			{
+				ai.biomechShotTimer = BIOMECH_LASER_SHOT_GAP;
+			}
+			else if (ai.energy <= 0.0f)
+			{
+				ai.biomechReloadTimer = BIOMECH_LASER_RELOAD;
+			}
+			else
+			{
+				ai.biomechVolleyCooldown = BIOMECH_LASER_BURST_INTERVAL - BIOMECH_LASER_WINDUP - ((BIOMECH_LASER_BURST_SHOTS - 1) * BIOMECH_LASER_SHOT_GAP);
+			}
+		}
+	}
+	else if ((ai.biomechTelegraph == 0) && (ai.biomechReloadTimer == 0) && (ai.biomechVolleyCooldown == 0) &&
+		(ai.energy >= BIOMECH_LASER_BURST_SHOTS) && ai.canSee && (player.health > 0) && (game.missionOver == 0))
+	{
+		enemy->face = (player.x < enemy->x) ? 1 : 0;
+		ai.biomechAimX = playerX;
+		ai.biomechAimY = playerY;
+		ai.biomechTelegraph = BIOMECH_LASER_WINDUP;
+		ai.biomechAttackAnimTimer = BIOMECH_ATTACK_ANIMATION_FRAMES;
+		ai.attackStamp = aiFrame;
+	}
+}
+
 void doAI(Entity *enemy)
 {
 	EnemyAIState &ai = getAIState(enemy);
+	if (ai.ledgeJumpTimer > 0)
+	{
+		if (!enemy->falling)
+			ai.ledgeJumpTimer = 0;
+		else
+			ai.ledgeJumpTimer--;
+	}
+
+	if (ai.jumpTimer > 0)
+	{
+		if (!enemy->falling)
+			ai.jumpTimer = 0;
+		else
+			ai.jumpTimer--;
+	}
+
 	if (ai.shotEvadeTimer > 0)
 		ai.shotEvadeTimer--;
 	if (ai.shotEvadeCooldown > 0)
@@ -2643,6 +2961,22 @@ void doAI(Entity *enemy)
 
 	// notice the player (gradually) and head for where they were last seen
 	senseSurroundings(enemy, ai);
+
+	if (isBiomechSoldier(enemy))
+		updateBiomechCombat(enemy, ai);
+
+	// BioMech in acid/slime: 2 hp/sec damage total.
+	// checkEnvironment() already applies 1 hp/tick; we add 1 more here to reach 2 hp/sec.
+	// Also force full awareness so it immediately tries to escape.
+	if (isBiomechSoldier(enemy) && (enemy->environment == ENV_SLIME))
+	{
+		if (enemy->thinktime == 0)
+			enemy->health -= 1; // +1 on top of checkEnvironment's 1 = 2 hp/sec total
+
+		// Always fully aware while in acid — it must escape
+		ai.awareness = AWARE_MAX;
+		ai.alerted   = true;
+	}
 
 	if ((ai.shotEvadeTimer <= 0) && (ai.shotEvadeCooldown <= 0) &&
 		(!(enemy->flags & (ENT_STATIC|ENT_NOMOVE|ENT_INANIMATE|ENT_BOSS|ENT_GALDOV))))
@@ -2752,8 +3086,8 @@ void doAI(Entity *enemy)
 
 	if (ai.stuck == 20)
 	{
-		if ((!(enemy->flags & (ENT_FLIES|ENT_SWIMS|ENT_NOJUMP))) && map.isSolid(x, y))
-			enemy->dy = -12;
+		if ((!(enemy->flags & (ENT_FLIES|ENT_NOJUMP))) && (!usesSwimMovement(enemy)) && map.isSolid(x, y))
+			startGroundJump(enemy, ai, (goalX > curX) ? GROUND_JUMP_DX : -GROUND_JUMP_DX);
 	}
 	else if (ai.stuck > 60)
 	{
@@ -2770,7 +3104,7 @@ void doAI(Entity *enemy)
 		enemy->tx = (int)enemy->x;
 
 	// AVOID PLAYER'S GRENADES (highest priority - survival)
-	if (avoidPlayerGrenade(enemy, mv))
+	if (avoidPlayerGrenade(enemy))
 	{
 		// Grenade detected and moved away, skip distance preference
 		// Continue to ally grenade avoidance and separation
@@ -2881,6 +3215,108 @@ void doAI(Entity *enemy)
 	if (ai.shotEvadeTimer > 0)
 		mv.propose(MOVE_PRIO_SHOT_EVADE, ai.shotEvadeX);
 
+	// BioMech escape from acid: highest movement priority.
+	// 1) walk to the nearest dry spot on the same level (a wall in the way blocks that side)
+	// 2) otherwise climb the wall beside it up to its top and step onto it (ai.climbTimer drives that below,
+	//    because the climb goes on after the liquid is left behind)
+	if (isBiomechSoldier(enemy) && (enemy->environment == ENV_SLIME))
+	{
+		int bodyTiles = (enemy->height + BRICKSIZE - 1) >> BRICKSHIFT;
+		int feetTileY = ((int)(enemy->y + enemy->height)) >> BRICKSHIFT;
+		int selfTileX = ((int)enemy->x + enemy->width / 2) >> BRICKSHIFT;
+		int escapeX   = (int)enemy->x;
+		int bestDist  = 9999;
+		int wallTileX[2] = {-1, -1};   // per side (0 = left, 1 = right): first column with a wall at body height
+
+		for (int side = 0; side < 2; side++)
+		{
+			int sign = (side == 0) ? -1 : 1;
+
+			for (int delta = 1; delta <= 20; delta++)
+			{
+				int tileX = selfTileX + (sign * delta);
+				if ((tileX < 0) || (tileX >= MAPWIDTH))
+					break;
+
+				bool blocked = false;
+				for (int row = 1; row <= bodyTiles; row++)
+				{
+					if (map.isSolid(tileX, feetTileY - row))
+					{
+						blocked = true;
+						break;
+					}
+				}
+
+				if (blocked)
+				{
+					wallTileX[side] = tileX;
+					break;
+				}
+
+				// dry: the body's bottom row is free of liquid and there is floor under it
+				int colAttr = map.data[tileX][feetTileY];
+				bool dryGround = (colAttr != MAP_SLIME) && (colAttr != MAP_LAVA) &&
+				                 (!map.isLiquid(tileX, feetTileY - 1)) &&
+				                 (map.isSolid(tileX, feetTileY) || map.isSolid(tileX, feetTileY + 1));
+
+				if (dryGround)
+				{
+					if (delta < bestDist)
+					{
+						bestDist = delta;
+						escapeX  = tileX << BRICKSHIFT;
+					}
+					break;
+				}
+			}
+		}
+
+		if ((bestDist == 9999) && (ai.climbTimer == 0))
+		{
+			int bestRise = 9999;
+
+			for (int side = 0; side < 2; side++)
+			{
+				if (wallTileX[side] < 0)
+					continue;
+
+				// first free row above the wall: the row below it is the top of the wall
+				for (int up = 0; up < 30; up++)
+				{
+					int r = feetTileY - 1 - up;
+					if (r < bodyTiles + 1)
+						break;
+
+					if (map.isSolid(wallTileX[side], r))
+						continue;
+
+					bool clear = map.isSolid(wallTileX[side], r + 1);
+					for (int k = 0; (k < bodyTiles) && clear; k++)
+					{
+						if (map.isSolid(wallTileX[side], r - k))
+							clear = false;
+					}
+
+					if (clear && (up < bestRise))
+					{
+						bestRise = up;
+						ai.climbDir = (side == 0) ? -1 : 1;
+						ai.climbTopY = ((r + 1) * BRICKSIZE) - enemy->height - 4;
+						ai.climbTimer = 300;
+					}
+
+					break;
+				}
+			}
+		}
+
+		if (ai.climbTimer > 0)
+			escapeX = (int)enemy->x + (ai.climbDir * BRICKSIZE);
+
+		mv.propose(MOVE_PRIO_ESCAPE, escapeX);
+	}
+
 	// apply the winning destination (nothing proposed = keep the current one)
 	if (mv.has)
 		enemy->tx = mv.tx;
@@ -2894,11 +3330,32 @@ void doAI(Entity *enemy)
 	// Don't enter areas you're not supposed to
 	if (enemy->tx != (int)enemy->x)
 	{
-		if (!(enemy->flags & (ENT_FLIES|ENT_SWIMS)))
+		if ((!(enemy->flags & ENT_FLIES)) && (!usesSwimMovement(enemy)))
 		{
-			if (!map.isSolid(x, y))
+			int direction = (enemy->tx > (int)enemy->x) ? 1 : -1;
+			int edgeX = (int)(enemy->x + ((direction > 0) ? enemy->width : -1)) >> BRICKSHIFT;
+			int feetY = ((int)enemy->y + enemy->height) >> BRICKSHIFT;
+
+			if (!map.isSolid(edgeX, feetY))
 			{
-				enemy->tx = (int)enemy->x;
+				// BioMech chasing Bob downward: if the player is below, walk off the edge instead of stopping,
+				// but ONLY when the drop ends on dry solid ground. (It used to test the tiles under its own body,
+				// which is always the platform it stands on, so it jumped into acid, climbed out, and jumped in again.)
+				bool biomechDropDown = isBiomechSoldier(enemy) &&
+				                      (player.y > enemy->y + enemy->height + 16) &&
+				                      hasDryLandingBelow(edgeX, feetY);
+
+				if (biomechDropDown)
+				{
+					// Keep moving — gravity does the rest. No ledge jump needed.
+				}
+				else if ((!enemy->falling) && (!(enemy->flags & ENT_NOJUMP)) && hasNearbyJumpPlatform(enemy, direction, edgeX, feetY))
+				{
+					enemy->dy = GROUND_JUMP_DY;
+					ai.ledgeJumpTimer = 52;
+				}
+				else if ((ai.ledgeJumpTimer == 0) && (ai.jumpTimer == 0))
+					enemy->tx = (int)enemy->x;
 			}
 		}
 	}
@@ -2955,7 +3412,7 @@ void doAI(Entity *enemy)
 	if (!enemy->falling)
 		enemy->dx = 0;
 
-	if ((enemy->flags & ENT_FLIES) || (enemy->flags & ENT_SWIMS))
+	if ((enemy->flags & ENT_FLIES) || usesSwimMovement(enemy))
 	{
 		enemy->dx = enemy->dy = 0;
 
@@ -2967,12 +3424,60 @@ void doAI(Entity *enemy)
 	if ((int)enemy->x < enemy->tx) {enemy->dx = 1; enemy->face = 0;}
 	if ((int)enemy->x > enemy->tx) {enemy->dx = -1; enemy->face = 1;}
 
+	if (ai.ledgeJumpTimer > 0)
+	{
+		if ((int)enemy->x < enemy->tx) enemy->dx = 4;
+		if ((int)enemy->x > enemy->tx) enemy->dx = -4;
+	}
+	else if ((ai.jumpTimer > 0) && (ai.jumpDX != 0))
+	{
+		enemy->dx = ai.jumpDX;
+		enemy->face = (ai.jumpDX > 0) ? 0 : 1;
+	}
+
 	if ((enemy->flags & ENT_SWIMS) && (enemy->environment == ENV_WATER))
 	{
 		enemy->dy = 0;
 
 		if ((int)enemy->y < enemy->ty) enemy->dy = 1;
 		if ((int)enemy->y > enemy->ty) enemy->dy = -1;
+	}
+
+	// BioMech climbing out of acid: push against the wall, rise until the feet clear its top, then step onto it.
+	// The climb carries on after leaving the liquid, so it is not tied to ENV_SLIME.
+	// It only ends when the body is at the height of the top AND there is solid ground under its middle.
+	// (It used to end as soon as !falling and the environment wasn't slime, but while climbing with dy = -2 the
+	// entity is not 'falling' and its body is already out of the acid, so it let go halfway up the wall and
+	// dropped back in, over and over, never reaching the top.)
+	if (ai.climbTimer > 0)
+	{
+		ai.climbTimer--;
+
+		int topCX = (int)(enemy->x + (enemy->width / 2)) >> BRICKSHIFT;
+		int topCY = (int)(enemy->y + enemy->height + 6) >> BRICKSHIFT;
+		bool onTop = ((int)enemy->y <= (ai.climbTopY + 6)) && map.isSolid(topCX, topCY) &&
+		             (enemy->environment != ENV_SLIME) && (enemy->environment != ENV_LAVA);
+
+		if (onTop)
+		{
+			ai.climbTimer = 0; // standing on top of the wall: gravity does the last few pixels
+		}
+		else
+		{
+			enemy->dx = ai.climbDir * 2;
+			enemy->face = (ai.climbDir > 0) ? 0 : 1;
+			enemy->dy = ((int)enemy->y > ai.climbTopY) ? -2 : 0;
+		}
+	}
+
+	// BioMech wall climbing: if against a wall, can move vertically
+	if (isBiomechSoldier(enemy) && (ai.climbTimer == 0) && canClimbWall(enemy))
+	{
+		// Override gravity and allow vertical movement
+		if ((int)enemy->y < enemy->ty)
+			enemy->dy = 2; // climb up
+		else if ((int)enemy->y > enemy->ty)
+			enemy->dy = -2; // climb down
 	}
 
 	// staggered by a hit on the bare chassis: hold still, then a short grace period
@@ -3800,7 +4305,20 @@ void doEnemies()
 						addFireTrailParticle(enemy->x + (enemy->face * 16) + Math::rrand(-1, 1), enemy->y + Math::rrand(-1, 1));
 					}
 					
-					graphics.blit(enemy->getFaceImage(), x, y, graphics.screen, false);
+					SDL_Surface *enemyImage = enemy->getFaceImage();
+					std::map<Entity*, EnemyAIState>::iterator imageIt = aiState.find(enemy);
+
+					if (isBiomechSoldier(enemy) && (imageIt != aiState.end()) && (imageIt->second.biomechAttackAnimTimer > 0))
+					{
+						Sprite *attack = graphics.getSprite(enemy->face ? "BiomechAttackLeft" : "BiomechAttackRight", true);
+						int elapsed = BIOMECH_ATTACK_ANIMATION_FRAMES - imageIt->second.biomechAttackAnimTimer;
+						int frame = elapsed / (BIOMECH_ATTACK_ANIMATION_FRAMES / 3);
+						if (frame > attack->maxFrames)
+							frame = attack->maxFrames;
+						enemyImage = attack->image[frame];
+					}
+
+					graphics.blit(enemyImage, x, y, graphics.screen, false);
 					drawDroidShield(enemy, x, y);
 					drawDroidBeam(enemy, x, y);
 					
@@ -3832,8 +4350,13 @@ void doEnemies()
 			
 			if ((enemy->environment == ENV_SLIME) || (enemy->environment == ENV_LAVA))
 			{
-				checkObjectives(enemy->name, false);
-				enemy->health = -1;
+				// BioMech resists acid: takes gradual damage (2 hp/sec via checkEnvironment)
+				// instead of dying instantly. The escape AI in doAI() will push it out.
+				if (!isBiomechSoldier(enemy))
+				{
+					checkObjectives(enemy->name, false);
+					enemy->health = -1;
+				}
 			}
 		}
 		else

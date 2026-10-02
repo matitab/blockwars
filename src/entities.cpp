@@ -21,6 +21,18 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "entities.h"
 
+// Implemented in enemies.cpp
+bool entityIsBiomech(Entity *ent);
+bool entityIsBiomechOnLand(Entity *ent);
+
+// ENT_SWIMS keeps an entity inside liquid (air tiles block it) and turns gravity off. BioMechs also carry
+// ENT_SWIMS so they can swim, but they must be able to leave the water, walk, jump and climb, so the
+// "stay in the water" rules don't apply to them.
+static bool isConfinedSwimmer(Entity *ent)
+{
+	return ((ent->flags & ENT_SWIMS) != 0) && (!entityIsBiomech(ent));
+}
+
 void throwAndDamageEntity(Entity *ent, int damage, int minDX, int maxDX, int DY)
 {
 	if ((ent == &player) && (game.missionOver > 0))
@@ -105,7 +117,7 @@ bool checkBrickContactX(Entity *ent)
 
 	evaluateMapAttribute(ent, mapAttribute);
 
-	if ((ent->flags & ENT_SWIMS) && (mapAttribute == MAP_AIR))
+	if (isConfinedSwimmer(ent) && (mapAttribute == MAP_AIR))
 		return true;
 
 	if (ent->dx < 0)
@@ -163,7 +175,7 @@ bool checkBrickContactY(Entity *ent)
 
 	evaluateMapAttribute(ent, mapAttribute);
 	
-	if (ent->flags & ENT_SWIMS)
+	if (isConfinedSwimmer(ent))
 	{
 		switch (mapAttribute)
 		{
@@ -193,7 +205,7 @@ bool checkBrickContactY(Entity *ent)
 		if ((map.isSolid(x1, y1)) || (map.isSolid(x2, y1)))
 		{
 			ent->y = (y1 + 1) * BRICKSIZE;
-			ent->falling = false;
+			ent->falling = true;
 
 			return true;
 		}
@@ -301,7 +313,7 @@ void moveEntity(Entity *ent)
 	
 	if (ent != &player)
 	{
-		if ((!(ent->flags & ENT_WEIGHTLESS)) && (!(ent->flags & ENT_FLIES)) && (!(ent->flags & ENT_SWIMS)))
+		if ((!(ent->flags & ENT_WEIGHTLESS)) && (!(ent->flags & ENT_FLIES)) && ((!(ent->flags & ENT_SWIMS)) || entityIsBiomechOnLand(ent)))
 		{
 			ent->applyGravity();
 		}

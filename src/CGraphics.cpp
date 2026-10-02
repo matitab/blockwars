@@ -631,9 +631,25 @@ SDL_Surface *Graphics::loadImage(const char *filename, int hue, int sat, int val
 
 SDL_Surface *Graphics::loadImage2x(const char *filename, bool srcalpha)
 {
-	SDL_Surface *image = loadImage(filename, srcalpha);
-	if (!image)
-		return image;
+	SDL_Surface *image = NULL;
+	bool hasBaseImage;
+
+	// Check if base image exists first (don't crash if it doesn't)
+	#if USEPAK
+	hasBaseImage = engine->getPak()->fileExists(filename);
+	#else
+	FILE *baseFile = fopen(filename, "rb");
+	hasBaseImage = (baseFile != NULL);
+	if (baseFile)
+		fclose(baseFile);
+	#endif
+
+	if (hasBaseImage)
+	{
+		image = loadImage(filename, srcalpha);
+		if (!image)
+			return image;
+	}
 
 	const char *base = strrchr(filename, '/');
 	char path2x[512];
@@ -661,15 +677,24 @@ SDL_Surface *Graphics::loadImage2x(const char *filename, bool srcalpha)
 	if (!image2x)
 		return image;
 
-	if ((image2x->w != image->w * 2) || (image2x->h != image->h * 2))
+	// If we have a base image, verify the 2x is exactly 2x the size
+	if (image)
 	{
-		printf("WARNING: '%s' is %dx%d, expected %dx%d. Using the original image.\n", path2x, image2x->w, image2x->h, image->w * 2, image->h * 2);
-		SDL_FreeSurface(image2x);
-		return image;
-	}
+		if ((image2x->w != image->w * 2) || (image2x->h != image->h * 2))
+		{
+			printf("WARNING: '%s' is %dx%d, expected %dx%d. Using the original image.\n", path2x, image2x->w, image2x->h, image->w * 2, image->h * 2);
+			SDL_FreeSurface(image2x);
+			return image;
+		}
 
-	setLogicalSize(image2x, image->w, image->h);
-	SDL_FreeSurface(image);
+		setLogicalSize(image2x, image->w, image->h);
+		SDL_FreeSurface(image);
+	}
+	else
+	{
+		// No base image, use 2x as-is with its actual size as logical size
+		setLogicalSize(image2x, image2x->w, image2x->h);
+	}
 
 	return image2x;
 }
@@ -722,10 +747,25 @@ int Graphics::getLogicalHeight(const SDL_Surface *surface) const
 */
 SDL_Surface *Graphics::loadSpriteImage(const char *filename, int hue, int sat, int value)
 {
-	SDL_Surface *image = loadImage(filename, hue, sat, value);
+	SDL_Surface *image = NULL;
+	bool hasBaseImage;
 
-	if (!image)
-		return image;
+	#if USEPAK
+	hasBaseImage = engine->getPak()->fileExists(filename);
+	#else
+	FILE *baseFile = fopen(filename, "rb");
+	hasBaseImage = (baseFile != NULL);
+	if (baseFile)
+		fclose(baseFile);
+	#endif
+
+	if (hasBaseImage)
+	{
+		image = loadImage(filename, hue, sat, value);
+
+		if (!image)
+			return image;
+	}
 
 	const char *base = strrchr(filename, '/');
 	base = base ? (base + 1) : filename;
@@ -734,25 +774,39 @@ SDL_Surface *Graphics::loadSpriteImage(const char *filename, int hue, int sat, i
 	snprintf(path2x, sizeof path2x, "gfx/sprites/2x/%s", base);
 
 	#if USEPAK
-
-	if (!engine->getPak()->fileExists(path2x))
-		return image;
-
+	bool hasImage2x = engine->getPak()->fileExists(path2x);
 	#else
-
-	FILE *fp = fopen(path2x, "rb");
-
-	if (!fp)
-		return image;
-
-	fclose(fp);
-
+	FILE *file2x = fopen(path2x, "rb");
+	bool hasImage2x = (file2x != NULL);
+	if (file2x)
+		fclose(file2x);
 	#endif
+
+	if (!hasImage2x)
+	{
+		if (image)
+			return image;
+
+		// Neither base nor 2x exists - return NULL instead of crashing
+		return NULL;
+	}
 
 	SDL_Surface *image2x = loadImage(path2x, hue, sat, value);
 
 	if (!image2x)
 		return image;
+
+	if (!image)
+	{
+		if (((image2x->w % 2) != 0) || ((image2x->h % 2) != 0))
+		{
+			SDL_FreeSurface(image2x);
+			return showErrorAndExit(ERR_FILE, path2x), (SDL_Surface*)NULL;
+		}
+
+		setLogicalSize(image2x, image2x->w / 2, image2x->h / 2);
+		return image2x;
+	}
 
 	if ((image2x->w != image->w * 2) || (image2x->h != image->h * 2))
 	{

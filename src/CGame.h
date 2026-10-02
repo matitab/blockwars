@@ -43,6 +43,12 @@ class Game {
 		unsigned char currentWeapon;
 		unsigned int bulletsFired[MAX_WEAPONS], bulletsHit[MAX_WEAPONS];
 
+		// Weapon inventory: up to 2 slots. -1 = empty slot.
+		// equippedWeapons[0] is slot 1 (key 1), equippedWeapons[1] is slot 2 (key 2).
+		// activeSlot tracks which slot is active (0 or 1).
+		signed char equippedWeapons[2];
+		signed char activeSlot;
+
 		int checkPointX, checkPointY;
 		int teleportPointX, teleportPointY;
 

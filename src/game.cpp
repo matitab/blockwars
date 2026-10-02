@@ -622,7 +622,18 @@ int doGame()
 	}
 	else
 	{
-		player.currentWeapon = &weapon[WP_PISTOL];
+		// New mission: reset slots — pistol in slot 0, slot 1 empty
+		game.equippedWeapons[0] = WP_PISTOL;
+		game.equippedWeapons[1] = -1;
+		game.activeSlot = 0;
+	}
+
+	// Always restore currentWeapon from the active slot (covers new mission, continue, and load)
+	{
+		int wid = game.equippedWeapons[game.activeSlot];
+		if (wid < 0) wid = WP_PISTOL;
+		game.currentWeapon = (unsigned char)wid;
+		player.currentWeapon = &weapon[game.currentWeapon];
 		resetPlayerAmmo();
 	}
 

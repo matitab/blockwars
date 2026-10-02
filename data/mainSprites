@@ -85,6 +85,12 @@ MachineBlobRight 	-95 0 0 gfx/sprites/evilBlobRight1.png 8 gfx/sprites/evilBlobR
 MachineBlobLeft 	-95 0 0 gfx/sprites/evilBlobLeft1.png 8 gfx/sprites/evilBlobLeft2.png 8 gfx/sprites/evilBlobLeft3.png 8 gfx/sprites/evilBlobLeft4.png 8 gfx/sprites/evilBlobLeft3.png 8 gfx/sprites/evilBlobLeft2.png 8 @none@ 0
 MachineBlobDeath 	-95 0 0 gfx/sprites/evilBlobRight1.png 5 gfx/sprites/evilBlobSpin1.png 5 gfx/sprites/evilBlobSpin2.png 5 gfx/sprites/evilBlobSpin3.png 5 @none@ 0
 
+BiomechRight 	0 0 0 gfx/sprites/biomechRight1.png 8 gfx/sprites/biomechRight2.png 8 gfx/sprites/biomechRight3.png 8 gfx/sprites/biomechRight4.png 8 @none@ 0
+BiomechLeft 	0 0 0 gfx/sprites/biomechLeft1.png 8 gfx/sprites/biomechLeft2.png 8 gfx/sprites/biomechLeft3.png 8 gfx/sprites/biomechLeft4.png 8 @none@ 0
+BiomechDeath 	0 0 0 gfx/sprites/biomechDeathRight1.png 5 gfx/sprites/biomechDeathRight2.png 5 gfx/sprites/biomechDeathRight3.png 5 @none@ 0
+BiomechAttackRight 	0 0 0 gfx/sprites/biomechAttackRight1.png 8 gfx/sprites/biomechAttackRight2.png 8 gfx/sprites/biomechAttackRight3.png 8 @none@ 0
+BiomechAttackLeft 	0 0 0 gfx/sprites/biomechAttackLeft1.png 8 gfx/sprites/biomechAttackLeft2.png 8 gfx/sprites/biomechAttackLeft3.png 8 @none@ 0
+
 TeleportStar		0 0 0 gfx/sprites/teleportStar1.png 10 gfx/sprites/teleportStar2.png 10 gfx/sprites/teleportStar3.png 10 gfx/sprites/teleportStar4.png 10 gfx/sprites/teleportStar5.png 10 gfx/sprites/teleportStar6.png 10 gfx/sprites/teleportStar7.png 10 @none@ 0
 
 ScaredMIA 			0 0 0 gfx/sprites/scaredMIA1.png 3 gfx/sprites/scaredMIA2.png 2 gfx/sprites/scaredMIA3.png 3 gfx/sprites/scaredMIA4.png 2 @none@ 0

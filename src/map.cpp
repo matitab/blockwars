@@ -475,6 +475,9 @@ void showMap(int centerX, int centerY)
 	engine.clearInput();
 }
 
+// Implemented in enemies.cpp
+bool entityIsBiomech(Entity *ent);
+
 void evaluateMapAttribute(Entity *ent, int mapAttribute)
 {
 	switch (mapAttribute)
@@ -514,7 +517,14 @@ void evaluateMapAttribute(Entity *ent, int mapAttribute)
 		case MAP_AIR:
 			if ((ent->environment != ENV_AIR) && (!(ent->flags & ENT_INANIMATE)))
 			{
-				if (!(ent->flags & ENT_SWIMS))
+				// BioMechs carry ENT_SWIMS but leave the liquid: without this they stayed in ENV_SLIME/WATER/LAVA
+				// forever after the first dip (acid kept hurting them on dry ground, isBiomechOnLand() stayed false)
+				if ((ent->flags & ENT_SWIMS) && entityIsBiomech(ent))
+				{
+					ent->environment = ENV_AIR;
+					ent->checkEnvironment();
+				}
+				else if (!(ent->flags & ENT_SWIMS))
 				{
 					if (ent->dy < 0)
 					{
