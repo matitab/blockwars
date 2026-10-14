@@ -21,14 +21,114 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "options.h"
 
+#include "uiOptionsView.h"
+#include "uiMenuCursor.h"
+#include <sstream>
+
+namespace {
+std::string optionsFont() {
+#if USEPAK
+    return std::string(engine.userHomeDirectory) + "font.ttf";
+#else
+    return "data/vera.ttf";
+#endif
+}
+
+// The engine continues to own navigation, variable bindings and input capture.
+class OptionsScreen {
+    UI::MenuCursor menuCursor;
+    UI::Renderer ui;
+    UI::OptionsView view;
+    std::string title;
+    std::vector<Widget*> widgets;
+public:
+    explicit OptionsScreen(const char *title) : ui(graphics.renderer, optionsFont().c_str()), title(title) {
+        resetPointer();
+    }
+    void resetPointer() {
+        view = UI::OptionsView();
+        view.suspendPointer((SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) != 0);
+    }
+    void present() {
+        widgets.clear();
+        std::vector<UI::OptionItem> items;
+        for (Widget *w = (Widget*)engine.widgetList.getHead()->next; w; w = (Widget*)w->next) {
+            w->changed = false;
+            if (!w->visible || !w->value || w->type == WG_LABEL) continue;
+            UI::OptionItem item;
+            item.label = w->label;
+            item.value = *w->value;
+            item.minimum = w->min;
+            item.maximum = w->max;
+            item.enabled = w->enabled;
+            item.focused = w == engine.highlightedWidget;
+            if (w->type == WG_RADIO) {
+                item.type = UI::OptionRadio;
+                std::istringstream choices(w->options);
+                std::string choice;
+                while (std::getline(choices, choice, '|')) item.choices.push_back(choice);
+            } else if (w->type == WG_SLIDER || w->type == WG_SMOOTH_SLIDER) {
+                item.type = UI::OptionSlider;
+            } else if (w->type == WG_KEYBOARD || w->type == WG_JOYPAD) {
+                item.type = UI::OptionBinding;
+                item.capturing = item.focused && (engine.waitForKey || engine.waitForButton);
+                if (w->type == WG_KEYBOARD) item.binding = Keyboard::translateKey(item.value);
+                else if (item.value < -2) item.binding = "...";
+                else if (item.value == -2) item.binding = _("N/A");
+                else {
+                    char button[64];
+                    std::snprintf(button, sizeof button, _("Button #%d"), item.value);
+                    item.binding = button;
+                }
+            }
+            widgets.push_back(w);
+            items.push_back(item);
+        }
+        int width, height;
+        SDL_GetRendererOutputSize(graphics.renderer, &width, &height);
+        ui.begin(width, height);
+        view.draw(ui, title, items);
+        graphics.finishScreenPresent();
+    }
+    int process() {
+        int x, y, width, height;
+        bool left = (SDL_GetMouseState(&x, &y) & SDL_BUTTON_LMASK) != 0;
+        SDL_GetWindowSize(graphics.window, &width, &height);
+        if (engine.waitForKey || engine.waitForButton) {
+            view.suspendPointer(left);
+            engine.mouseWheel = 0;
+            return 0;
+        }
+        UI::OptionAction action = view.pointer(ui.layout.fromWindow(UI::Point(x, y), width, height), left, engine.mouseWheel);
+        engine.mouseWheel = 0;
+        int sound = 0;
+        if (action.index >= 0 && action.index < int(widgets.size())) {
+            Widget *w = widgets[action.index];
+            if (w->visible && w->enabled) {
+                engine.highlightWidget(w->name);
+                if (action.activate) {
+                    // Reuse binding capture and button activation in processWidgets.
+                    engine.keyState[SDL_SCANCODE_RETURN] = 1;
+                } else if (*w->value != action.value) {
+                    *w->value = action.value;
+                    w->changed = true;
+                    sound = 1;
+                }
+            }
+        }
+        int keyboardSound = engine.processWidgets();
+        return keyboardSound ? keyboardSound : sound;
+    }
+};
+}
+
+
 void showCheatConfig()
 {
 	SDL_FillRect(graphics.screen, NULL, graphics.black);
 	graphics.delay(500);
 
-	SDL_Surface *header = graphics.getSprite("cheatHeader", true)->image[0];
-	SDL_Surface *optionsBackground = graphics.getSprite("optionsBackground", true)->image[0];
-	SDL_SetColorKey(optionsBackground, 0, SDL_MapRGB(optionsBackground->format, 0, 0, 0));
+	OptionsScreen screen(_("Cheats"));
 
 	if (!engine.loadWidgets(_("data/cheatWidgets")))
 	{
@@ -47,10 +147,6 @@ void showCheatConfig()
 	engine.setWidgetVariable("levels", &engine.cheatLevels);
 	engine.setWidgetVariable("skip", &engine.cheatSkipLevel);
 	engine.setWidgetVariable("confirm", &done);
-	
-	graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
-	graphics.blit(header, 320, 25, graphics.screen, true);
-	drawWidgets();
 
 	engine.flushInput();
 	engine.clearInput();
@@ -59,22 +155,18 @@ void showCheatConfig()
 
 	while (!done)
 	{
-		graphics.updateScreen();
+		screen.present();
 		
 		if (menuSound)
 			audio.playMenuSound(menuSound);
 
 		engine.getInput();
-		config.populate();
+		// Capturing keyboard bindings temporarily stores negative scancodes.
+		if (!engine.waitForKey && !engine.waitForButton)
+			config.populate();
 
-		menuSound = engine.processWidgets();
+		menuSound = screen.process();
 
-		if (menuSound)
-		{
-			graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
-			graphics.blit(header, 320, 25, graphics.screen, true);
-			drawWidgets();
-		}
 
 		if (engine.keyState[SDL_SCANCODE_ESCAPE])
 		{
@@ -109,9 +201,7 @@ void showKeyConfig()
 		graphics.showErrorAndExit(ERR_FILE, _("data/keyboardWidgets"));
 	}
 		
-	SDL_Surface *header = graphics.getSprite("keyHeader", true)->image[0];
-	SDL_Surface *optionsBackground = graphics.getSprite("optionsBackground", true)->image[0];
-	SDL_SetColorKey(optionsBackground, 0, SDL_MapRGB(optionsBackground->format, 0, 0, 0));
+	OptionsScreen screen(_("Keyboard"));
 
 	int done = 0;
 	int defaults = 0;
@@ -128,10 +218,6 @@ void showKeyConfig()
 
 	engine.setWidgetVariable("defaults", &defaults);
 	engine.setWidgetVariable("confirm", &done);
-	
-	graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
-	graphics.blit(header, 320, 25, graphics.screen, true);
-	drawWidgets();
 
 	engine.flushInput();
 	engine.clearInput();
@@ -142,7 +228,7 @@ void showKeyConfig()
 
 	while (!done)
 	{
-		graphics.updateScreen();
+		screen.present();
 		
 		if (menuSound)
 		{
@@ -150,13 +236,11 @@ void showKeyConfig()
 		}
 
 		engine.getInput();
-		config.populate();
+		// Capturing keyboard bindings temporarily stores negative scancodes.
+		if (!engine.waitForKey && !engine.waitForButton)
+			config.populate();
 
-		menuSound = engine.processWidgets();
-
-		graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
-		graphics.blit(header, 320, 25, graphics.screen, true);
-		drawWidgets();
+		menuSound = screen.process();
 		
 		if (defaults)
 		{
@@ -199,9 +283,7 @@ void showJoystickConfig()
 	if (!engine.loadWidgets(_("data/joystickWidgets")))
 		graphics.showErrorAndExit(ERR_FILE, _("data/joystickWidgets"));
 		
-	SDL_Surface *header = graphics.getSprite("joystickHeader", true)->image[0];
-	SDL_Surface *optionsBackground = graphics.getSprite("optionsBackground", true)->image[0];
-	SDL_SetColorKey(optionsBackground, 0, SDL_MapRGB(optionsBackground->format, 0, 0, 0));
+	OptionsScreen screen(_("Joystick"));
 
 	int done = 0;
 	int sensitivity = (config.joystick.sensitivity / 100);
@@ -220,10 +302,6 @@ void showJoystickConfig()
 	engine.setWidgetVariable("sensitivity", &sensitivity);
 
 	engine.setWidgetVariable("confirm", &done);
-	
-	graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
-	graphics.blit(header, 320, 25, graphics.screen, true);
-	drawWidgets();
 
 	engine.flushInput();
 	engine.clearInput();
@@ -234,19 +312,17 @@ void showJoystickConfig()
 
 	while (!done)
 	{
-		graphics.updateScreen();
+		screen.present();
 		
 		if (menuSound)
 			audio.playMenuSound(menuSound);
 
 		engine.getInput();
-		config.populate();
+		// Capturing keyboard bindings temporarily stores negative scancodes.
+		if (!engine.waitForKey && !engine.waitForButton)
+			config.populate();
 
-		menuSound = engine.processWidgets();
-
-		graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
-		graphics.blit(header, 320, 25, graphics.screen, true);
-		drawWidgets();
+		menuSound = screen.process();
 
 		if (engine.keyState[SDL_SCANCODE_ESCAPE])
 		{
@@ -287,9 +363,7 @@ void showGameplayConfig()
 		graphics.showErrorAndExit(ERR_FILE, _("data/gameplayWidgets"));
 	}
 
-	SDL_Surface *header = graphics.getSprite("optionsHeader", true)->image[0];
-	SDL_Surface *optionsBackground = graphics.getSprite("optionsBackground", true)->image[0];
-	SDL_SetColorKey(optionsBackground, 0, SDL_MapRGB(optionsBackground->format, 0, 0, 0));
+	OptionsScreen screen(_("Gameplay"));
 
 	int done = 0;
 
@@ -300,10 +374,6 @@ void showGameplayConfig()
 	engine.setWidgetVariable("shake", &game.screenShake);
 	engine.setWidgetVariable("confirm", &done);
 
-	graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
-	graphics.blit(header, 320, 25, graphics.screen, true);
-	drawWidgets();
-
 	engine.flushInput();
 	engine.clearInput();
 
@@ -311,22 +381,18 @@ void showGameplayConfig()
 
 	while (!done)
 	{
-		graphics.updateScreen();
+		screen.present();
 
 		if (menuSound)
 			audio.playMenuSound(menuSound);
 
 		engine.getInput();
-		config.populate();
+		// Capturing keyboard bindings temporarily stores negative scancodes.
+		if (!engine.waitForKey && !engine.waitForButton)
+			config.populate();
 
-		menuSound = engine.processWidgets();
+		menuSound = screen.process();
 
-		if (menuSound)
-		{
-			graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
-			graphics.blit(header, 320, 25, graphics.screen, true);
-			drawWidgets();
-		}
 
 		if (engine.keyState[SDL_SCANCODE_ESCAPE])
 		{
@@ -363,9 +429,7 @@ void showOptions()
 		graphics.showErrorAndExit(ERR_FILE, _("data/optionWidgets"));
 	}
 		
-	SDL_Surface *header = graphics.getSprite("optionsHeader", true)->image[0];
-	SDL_Surface *optionsBackground = graphics.getSprite("optionsBackground", true)->image[0];
-	SDL_SetColorKey(optionsBackground, 0, SDL_MapRGB(optionsBackground->format, 0, 0, 0));
+	OptionsScreen screen(_("Options"));
 
 	int done = 0;
 	int joysticks = 0;
@@ -400,10 +464,6 @@ void showOptions()
 
 	engine.showWidget("cheats", engine.cheats);
 
-	graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
-	graphics.blit(header, 320, 25, graphics.screen, true);
-	drawWidgets();
-
 	engine.flushInput();
 	engine.clearInput();
 	
@@ -411,13 +471,15 @@ void showOptions()
 
 	while (!done)
 	{
-		graphics.updateScreen();
+		screen.present();
 		
 		if (menuSound)
 			audio.playMenuSound(menuSound);
 
 		engine.getInput();
-		config.populate();
+		// Capturing keyboard bindings temporarily stores negative scancodes.
+		if (!engine.waitForKey && !engine.waitForButton)
+			config.populate();
 
 		if (engine.compareLastKeyInputs())
 		{
@@ -428,10 +490,11 @@ void showOptions()
 			}
 
 			engine.showWidget("cheats", engine.cheats);
-			drawWidgets();
+			screen.resetPointer();
+			screen.present();
 		}
 		
-		menuSound = engine.processWidgets();
+		menuSound = screen.process();
 
 		if (menuSound)
 		{
@@ -505,11 +568,8 @@ void showOptions()
 				}
 				
 				engine.showWidget("cheats", engine.cheats);
+				screen.resetPointer();
 			}
-
-			graphics.blit(optionsBackground, 0, 0, graphics.screen, false);
-			graphics.blit(header, 320, 25, graphics.screen, true);
-			drawWidgets();
 		}
 
 		if (engine.keyState[SDL_SCANCODE_ESCAPE])

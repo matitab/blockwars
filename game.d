@@ -7,7 +7,9 @@ game.o: src/game.cpp src/game.h src/headers.h src/defs.h src/defines.h \
  src/CFileData.h src/CPak.h src/CJoystick.h src/CKeyboard.h src/CEngine.h \
  src/CGraphics.h src/CAudio.h src/CGame.h src/CGameData.h src/CHub.h \
  src/CRadarBlip.h src/CCutscene.h src/CReplayDataHeader.h \
- src/CReplayData.h src/CConfig.h src/CMedalServer.h
+ src/CReplayData.h src/CConfig.h src/CMedalServer.h src/titleMenuView.h \
+ src/uiRenderer.h src/uiLayout.h src/uiTheme.h src/uiTheme.def \
+ src/uiMenuCursor.h
 src/game.h:
 src/headers.h:
 src/defs.h:
@@ -50,3 +52,9 @@ src/CReplayDataHeader.h:
 src/CReplayData.h:
 src/CConfig.h:
 src/CMedalServer.h:
+src/titleMenuView.h:
+src/uiRenderer.h:
+src/uiLayout.h:
+src/uiTheme.h:
+src/uiTheme.def:
+src/uiMenuCursor.h:

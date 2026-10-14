@@ -65,6 +65,20 @@ try {
                 if ($LASTEXITCODE -ne 0) { throw 'Fallo la compilacion de pruebas de layout.' }
                 & $layoutTest
                 if ($LASTEXITCODE -ne 0) { throw 'Fallaron las pruebas de layout.' }
+                $configTest = Join-Path $uiOutput 'uiConfigTest.exe'
+                & $compiler -Wall -Wextra ('-I' + (Join-Path $toolchain 'ucrt64\include')) tests/uiConfigTest.cpp -o $configTest
+                if ($LASTEXITCODE -ne 0) { throw 'Fallo la compilacion de pruebas de configuracion UI.' }
+                & $configTest
+                if ($LASTEXITCODE -ne 0) { throw 'Fallaron las pruebas de configuracion UI.' }
+                $optionsTest = Join-Path $uiOutput 'uiOptionsTest.exe'
+                & $compiler -Wall -Wextra ('-I' + (Join-Path $toolchain 'ucrt64\include')) ('-L' + (Join-Path $toolchain 'ucrt64\lib')) tests/uiOptionsTest.cpp uiOptionsView.o uiRenderer.o -lSDL2_image -lSDL2_ttf -lSDL2 -o $optionsTest
+                if ($LASTEXITCODE -ne 0) { throw 'Fallo la compilacion de pruebas de Options.' }
+                & $optionsTest $uiOutput
+                if ($LASTEXITCODE -ne 0) { throw 'Fallaron las pruebas de Options.' }
+                & $make -f Makefile.windows $compilerArgument .build/ui/gameOverTest.exe
+                if ($LASTEXITCODE -ne 0) { throw 'Fallo la compilacion de pruebas de Game Over.' }
+                & (Join-Path $uiOutput 'gameOverTest.exe') $uiOutput
+                if ($LASTEXITCODE -ne 0) { throw 'Fallaron las pruebas de Game Over.' }
                 & (Join-Path $PSScriptRoot 'ui-preview.exe') --verify $uiOutput
                 if ($LASTEXITCODE -ne 0) { throw 'Fallo la verificacion de texto y renderizado UI.' }
             }

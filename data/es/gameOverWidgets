@@ -1,4 +1,5 @@
 BUTTON gameOverNo gameover "Continúa desde el último Punto de Control " "*" -1 300 0 0
-BUTTON gameOverYes gameover "Salir a la Pantalla de Inicio " "*" -1 330 0 0
+BUTTON gameOverRestart gameover "Reiniciar el nivel completo" "*" -1 330 0 0
+BUTTON gameOverYes gameover "Salir a la Pantalla de Inicio " "*" -1 360 0 0
 
 END

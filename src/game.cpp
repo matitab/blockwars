@@ -21,6 +21,89 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "game.h"
 
+#include "titleMenuView.h"
+#include "uiMenuCursor.h"
+#include <stdexcept>
+
+namespace {
+std::string gameMenuFont()
+{
+#if USEPAK
+    return std::string(engine.userHomeDirectory) + "font.ttf";
+#else
+    return "data/vera.ttf";
+#endif
+}
+
+class GameMenuScreen
+{
+    UI::MenuCursor cursor;
+    UI::Renderer ui;
+    TitleMenuView view;
+    SDL_Surface *snapshot;
+    SDL_Texture *background;
+public:
+    explicit GameMenuScreen(const char *font = NULL) : ui(graphics.renderer, font ? font : gameMenuFont().c_str()),
+        snapshot(SDL_ConvertSurface(graphics.screen, graphics.screen->format, 0)), background(NULL)
+    {
+        if (!snapshot) throw std::runtime_error(SDL_GetError());
+        background = SDL_CreateTextureFromSurface(graphics.renderer, snapshot);
+        if (!background)
+        {
+            SDL_FreeSurface(snapshot);
+            throw std::runtime_error(SDL_GetError());
+        }
+        SDL_SetTextureBlendMode(background, SDL_BLENDMODE_NONE);
+        resetPointer();
+    }
+    ~GameMenuScreen()
+    {
+        SDL_BlitScaled(snapshot, NULL, graphics.screen, NULL);
+        SDL_DestroyTexture(background);
+        SDL_FreeSurface(snapshot);
+    }
+    void resetPointer()
+    {
+        view.resetPointer((SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) != 0);
+    }
+    void draw(const char *heading)
+    {
+        int width, height;
+        SDL_GetRendererOutputSize(graphics.renderer, &width, &height);
+        ui.begin(width, height);
+        ui.fill(UI::Rect(0, 0, ui.layout.width(), ui.layout.height()), SDL_Color{0, 0, 0, 255});
+        UI::Rect fitted = ui.layout.pixels(ui.layout.fitImage(snapshot->w, snapshot->h));
+        SDL_Rect destination = {int(fitted.x), int(fitted.y), int(fitted.w), int(fitted.h)};
+        SDL_RenderCopy(graphics.renderer, background, NULL, &destination);
+        ui.shade(UI::Rect(0, 0, ui.layout.width(), ui.layout.height()), ui.theme.modalOverlay);
+        view.draw(ui, heading, true);
+    }
+    void present(const char *heading)
+    {
+        draw(heading);
+        graphics.finishScreenPresent();
+    }
+    int process()
+    {
+        int keyboardSound = engine.processWidgets();
+        int x, y, width, height;
+        bool left = (SDL_GetMouseState(&x, &y) & SDL_BUTTON_LMASK) != 0;
+        SDL_GetWindowSize(graphics.window, &width, &height);
+        UI::Point pointer = ui.layout.fromWindow(UI::Point(x, y), width, height);
+        int pointerSound = view.processPointer(int(pointer.x), int(pointer.y), left);
+        return pointerSound ? pointerSound : keyboardSound;
+    }
+};
+
+const char *pauseHeading()
+{
+    if (engine.highlightedWidget && strcmp(engine.highlightedWidget->groupName, "options") != 0)
+        return _("Confirm");
+    return _("Paused");
+}
+}
+
+
 extern void resetPlayerAmmo();
 
 // Defined in CGraphics.cpp: menus use 1280x720, the mission uses a bigger view
@@ -38,20 +121,14 @@ void newGame()
 
 void showInGameOptions()
 {
+	int cont, options, escape, quit, escapeyes, escapeno, warnno, warnyes, quitno, quityes, train, trainno, trainyes, restart, restartno, restartyes;
+	cont = options = escape = quit = escapeyes = escapeno = warnno = warnyes = quitno = quityes = train = trainno = trainyes = restart = restartno = restartyes = 0;
+    auto configureWidgets = [&]()
+    {
 	if (!engine.loadWidgets(_("data/inGameWidgets")))
 	{
 		return graphics.showErrorAndExit(ERR_FILE, _("data/inGameWidgets"));
 	}
-
-	// The menu box was laid out for 640x480 (120,100): centre it on the real surface
-	const int boxX = (graphics.logicalW() - 400) / 2;
-	const int boxY = (graphics.logicalH() - 300) / 2;
-
-	graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
-
-	int cont, options, escape, quit, escapeyes, escapeno, warnno, warnyes, quitno, quityes, train, trainno, trainyes, restart, restartno, restartyes;
-	cont = options = escape = quit = escapeyes = escapeno = warnno = warnyes = quitno = quityes = train = trainno = trainyes = restart = restartno = restartyes = 0;
-
 	engine.setWidgetVariable("continue", &cont);
 	engine.setWidgetVariable("options", &options);
 	engine.setWidgetVariable("escape", &escape);
@@ -68,8 +145,8 @@ void showInGameOptions()
 	engine.setWidgetVariable("quitno", &quitno);
 	engine.setWidgetVariable("quityes", &quityes);
 	
-	engine.setWidgetVariable("trainno", &quitno);
-	engine.setWidgetVariable("trainyes", &quityes);
+	engine.setWidgetVariable("trainno", &trainno);
+	engine.setWidgetVariable("trainyes", &trainyes);
 	
 	engine.setWidgetVariable("escapeno", &escapeno);
 	engine.setWidgetVariable("escapeyes", &escapeyes);
@@ -95,17 +172,19 @@ void showInGameOptions()
 		engine.showWidget("quit", false);
 	}
 
+    };
+    configureWidgets();
+    GameMenuScreen screen;
+
 	engine.flushInput();
 	engine.clearInput();
-
-	drawWidgets();
 	audio.playMenuSound(2);
 	
 	int menuSound = -1;
 
 	while (true)
 	{
-		graphics.updateScreen();		
+		screen.present(pauseHeading());
 		engine.getInput();
 		config.populate();
 
@@ -116,12 +195,10 @@ void showInGameOptions()
 			break;
 		}
 		
-		menuSound = engine.processWidgets();
+		menuSound = screen.process();
 
 		if (menuSound)
 		{
-			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
-			drawWidgets();
 			audio.playMenuSound(menuSound);
 		}
 
@@ -144,9 +221,6 @@ void showInGameOptions()
 				engine.showWidgetGroup("escapeconf", true);
 				engine.highlightWidget("escapeno");
 			}
-
-			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
-			drawWidgets();
 			escape = 0;
 		}
 
@@ -163,7 +237,13 @@ void showInGameOptions()
 		if (options)
 		{
 			showOptions();
-			break;
+            options = 0;
+            configureWidgets();
+            engine.highlightWidget("options");
+            screen.resetPointer();
+            engine.flushInput();
+            engine.clearInput();
+            continue;
 		}
 
 		if ((warnno) || (quitno) || (escapeno) || (trainno) || (restartno))
@@ -184,9 +264,6 @@ void showInGameOptions()
 			{
 				engine.showWidget("quit", false);
 			}
-			
-			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
-			drawWidgets();
 			quitno = trainno = warnno = escapeno = restartno = 0;
 		}
 
@@ -195,9 +272,6 @@ void showInGameOptions()
 			engine.showWidgetGroup("options", false);
 			engine.showWidgetGroup("quitconf", true);
 			engine.highlightWidget("quitno");
-
-			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
-			drawWidgets();
 			quit = 0;
 		}
 		
@@ -206,9 +280,6 @@ void showInGameOptions()
 			engine.showWidgetGroup("options", false);
 			engine.showWidgetGroup("trainconf", true);
 			engine.highlightWidget("trainno");
-
-			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
-			drawWidgets();
 			train = 0;
 		}
 		
@@ -217,9 +288,6 @@ void showInGameOptions()
 			engine.showWidgetGroup("options", false);
 			engine.showWidgetGroup("restartconf", true);
 			engine.highlightWidget("restartno");
-
-			graphics.drawRect(boxX, boxY, 400, 300, graphics.black, graphics.white, graphics.screen);
-			drawWidgets();
 			restart = 0;
 		}
 
@@ -241,6 +309,8 @@ void showInGameOptions()
 
 		SDL_Delay(16);
 	}
+    engine.flushInput();
+    engine.clearInput();
 }
 
 void doGameStuff()
@@ -290,6 +360,30 @@ void doGameStuff()
 	replayData.commit();
 }
 
+static void configureGameOverMenu(int &cont, int &restart, int &quit)
+{
+	engine.setWidgetVariable("gameOverNo", &cont);
+	engine.setWidgetVariable("gameOverRestart", &restart);
+	engine.setWidgetVariable("gameOverYes", &quit);
+	bool checkpointAvailable = !map.isBossMission && game.canContinue > 0;
+	engine.enableWidget("gameOverNo", checkpointAvailable);
+	engine.highlightWidget(checkpointAvailable ? "gameOverNo" : "gameOverRestart");
+	if (checkpointAvailable && game.canContinue > 1)
+	{
+		Widget *widget = engine.getWidgetByName("gameOverNo");
+		char postfix[32];
+		snprintf(postfix, sizeof postfix, " (%d)", game.canContinue);
+		strlcat(widget->label, postfix, sizeof widget->label);
+	}
+}
+
+static void restartGameOverLevel()
+{
+	game.continueFromCheckPoint = false;
+	game.canContinue = 0;
+	clearAllMissionData();
+}
+
 int gameover()
 {
 	audio.stopMusic();
@@ -300,9 +394,6 @@ int gameover()
 		return graphics.showErrorAndExit(ERR_FILE, _("data/gameOverWidgets")), SECTION_GAME;
 	}
 
-	SDL_Surface *gameover = graphics.quickSprite("Game Over", graphics.loadImage2x("gfx/main/gameover.png"));
-	graphics.setTransparent(gameover);
-
 	audio.loadGameOverMusic();
 	audio.playMusic();
 
@@ -311,65 +402,23 @@ int gameover()
 
 	unsigned int frameLimit = SDL_GetTicks() + 16;
 
-	bool showGameOverOptions = false;
-	int cont, quit, menuSound;
-	cont = quit = menuSound = 0;
-
-	engine.setWidgetVariable("gameOverNo", &cont);
-	engine.setWidgetVariable("gameOverYes", &quit);
-	
-	if (game.canContinue > 1)
-	{
-		Widget *widget = engine.getWidgetByName("gameOverNo");
-		char postfix[100];
-		snprintf(postfix, sizeof postfix, " (%d)", game.canContinue);
-		strlcat(widget->label, postfix, sizeof widget->label);
-	}
+	int cont, restart, quit, menuSound;
+	cont = restart = quit = menuSound = 0;
+	configureGameOverMenu(cont, restart, quit);
+    GameMenuScreen screen;
 
 	while (true)
-	{
-		if (menuSound)
-			audio.playMenuSound(menuSound);
-
-		// The screen size changed since the mission: recompute the camera for it
-		engine.setPlayerPosition((int)player.x, (int)player.y, map.limitLeft, map.limitRight, map.limitUp, map.limitDown);
-
-		doGameStuff();
-		drawMapTopLayer();
-
-		graphics.blit(gameover, graphics.logicalW() / 2, graphics.logicalH() / 2, graphics.screen, true);
-
-		if (engine.userAccepts())
-		{
-			if (!showGameOverOptions)
-			{
-				showGameOverOptions = true;
-				engine.showWidgetGroup("gameover", true);
-				engine.highlightWidget("gameOverNo");
-				engine.flushInput();
-				engine.clearInput();
-			}
-
-			// Can't continue on a boss mission or if no checkpoints reached!
-			if ((map.isBossMission) || (!game.canContinue))
-			{
-				engine.showWidgetGroup("gameover", false);
-				quit = 1;
-			}
-		}
-		
-		if (showGameOverOptions)
-		{
-			drawWidgets();
-			menuSound = engine.processWidgets();
-		}
-
-		if ((cont) || (quit))
-			break;
-
-		engine.delay(frameLimit);
-		frameLimit = SDL_GetTicks() + 16;
-	}
+    {
+        screen.present(_("Game Over"));
+        engine.getInput();
+        menuSound = screen.process();
+        if (menuSound) audio.playMenuSound(menuSound);
+        if (cont || restart || quit) break;
+        engine.delay(frameLimit);
+        frameLimit = SDL_GetTicks() + 16;
+    }
+    engine.flushInput();
+    engine.clearInput();
 
 	if (quit)
 	{
@@ -377,13 +426,18 @@ int gameover()
 		graphics.fadeToBlack();
 		map.clear();
 		
+		setGameScreenSize(UI_VIEW_W, UI_VIEW_H);
 		return SECTION_TITLE;
 	}
 
-	game.continueFromCheckPoint = true;
+	if (restart)
+		restartGameOverLevel();
+	else
+		game.continueFromCheckPoint = true;
 	audio.stopMusic();
 	audio.reloadLevelMusic();
 
+	setGameScreenSize(UI_VIEW_W, UI_VIEW_H);
 	return SECTION_GAME;
 }
 
@@ -719,9 +773,7 @@ int doGame()
 		{
 			if (replayData.replayMode == REPLAY_MODE::NONE)
 			{
-				setGameScreenSize(UI_VIEW_W, UI_VIEW_H);
 				showInGameOptions();
-				setGameScreenSize(GAME_VIEW_W, GAME_VIEW_H);
 			}
 			else
 			{
@@ -892,9 +944,6 @@ int doGame()
 		#endif
 	}
 
-	// Back to the menu size for the mission clear / game over / hub screens
-	setGameScreenSize(UI_VIEW_W, UI_VIEW_H);
-
 	if (allObjectivesCompleted())
 	{
 		if (strcmp(map.name, "Final Battle") == 0)
@@ -906,6 +955,12 @@ int doGame()
 			game.missionOverReason = MIS_COMPLETE;
 		}
 	}
+
+    // Keep the final world frame for the native Game Over overlay.
+    if (game.missionOverReason != MIS_PLAYERDEAD && game.missionOverReason != MIS_TIMEUP)
+    {
+        setGameScreenSize(UI_VIEW_W, UI_VIEW_H);
+    }
 
 	switch (game.missionOverReason)
 	{

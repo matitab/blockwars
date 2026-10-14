@@ -10,12 +10,21 @@ struct Theme {
     SDL_Color background, surface, text, muted, accent, border, disabled;
     int fontSize[TextRoleCount];
     float margin, gap, padding, controlHeight;
+    SDL_Color panel;
+    float panelWidth, panelMargin, panelPadding, panelPaddingBottom;
+    float buttonHeight, buttonGap, headingTop, headingHeight, headingGap, labelHeight;
+    float panelMinTop, panelPosition, panelBottomMargin;
+    float optionsWidth, optionsRowHeight, optionsRowGap;
+    float modalWidth;
+    float modalMessageGap;
+    SDL_Color modalOverlay;
     unsigned int revision;
-    Theme() : background{18, 20, 23, 255}, surface{32, 36, 40, 255},
-        text{239, 242, 244, 255}, muted{163, 174, 182, 255},
-        accent{96, 221, 157, 255}, border{67, 77, 86, 255}, disabled{105, 116, 124, 255},
-        margin(32), gap(16), padding(20), controlHeight(48), revision(1) {
-        fontSize[Title] = 38; fontSize[Body] = 22; fontSize[Small] = 18;
+    Theme() : revision(1) {
+#define UI_NUMBER(key, member, initial, minimum, maximum, integral) member = initial;
+#define UI_COLOR(key, member, r, g, b, a) member = SDL_Color{r, g, b, a};
+#include "uiTheme.def"
+#undef UI_NUMBER
+#undef UI_COLOR
     }
 };
 }

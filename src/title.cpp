@@ -21,6 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "title.h"
 #include "titleMenuView.h"
+#include "uiMenuCursor.h"
 
 extern void doMusicInfo(unsigned int);
 
@@ -158,6 +159,7 @@ void loadTitleWidgets()
 */
 int title()
 {
+	UI::MenuCursor menuCursor;
 	audio.free();
 	graphics.free();
 

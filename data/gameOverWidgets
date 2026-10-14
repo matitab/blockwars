@@ -1,4 +1,5 @@
 BUTTON gameOverNo gameover "Continue from last Checkpoint" "*" -1 420 0 0
-BUTTON gameOverYes gameover "Quit to Title Screen" "*" -1 450 0 0
+BUTTON gameOverRestart gameover "Restart Level" "*" -1 450 0 0
+BUTTON gameOverYes gameover "Quit to Title Screen" "*" -1 480 0 0
 
 END

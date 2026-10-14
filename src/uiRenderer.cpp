@@ -1,9 +1,12 @@
 #include "uiRenderer.h"
+#include "uiConfig.h"
 #include <sstream>
 #include <stdexcept>
 
 namespace UI {
-Renderer::Renderer(SDL_Renderer *target, const char *path) : renderer(target), fontPath(path), layout(1360, 768) {}
+Renderer::Renderer(SDL_Renderer *target, const char *path) : renderer(target), fontPath(path), layout(1360, 768) {
+    loadTheme(theme);
+}
 Renderer::~Renderer() {
     clearCache();
     for (std::map<int, TTF_Font*>::iterator it = fonts.begin(); it != fonts.end(); ++it) TTF_CloseFont(it->second);
@@ -82,6 +85,13 @@ void Renderer::outline(Rect bounds, SDL_Color color) {
     SDL_Rect r = {int(p.x), int(p.y), int(p.w), int(p.h)};
     SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
     SDL_RenderDrawRect(renderer, &r);
+}
+void Renderer::shade(Rect bounds, SDL_Color color) {
+    SDL_BlendMode previous;
+    SDL_GetRenderDrawBlendMode(renderer, &previous);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    fill(bounds, color);
+    SDL_SetRenderDrawBlendMode(renderer, previous);
 }
 bool Renderer::button(const std::string &label, Rect bounds, State state) {
     fill(bounds, theme.surface);

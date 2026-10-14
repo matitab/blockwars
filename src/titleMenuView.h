@@ -15,6 +15,7 @@ class TitleMenuView {
 
 	std::vector<Control> controls;
 	bool previousMouseLeft;
+	int previousMouseX, previousMouseY;
 
 	const char *groupTitle() const;
 	Widget *widgetAt(UI::Point position) const;
@@ -23,7 +24,8 @@ class TitleMenuView {
 public:
 	TitleMenuView();
 	int processPointer(int mouseX, int mouseY, bool mouseLeft);
-	void draw(UI::Renderer &ui);
+	bool draw(UI::Renderer &ui, const char *heading = NULL, bool centered = false);
+	void resetPointer(bool mouseLeft) { controls.clear(); previousMouseLeft = mouseLeft; previousMouseX = previousMouseY = -1; }
 };
 
 #endif

@@ -31,6 +31,7 @@ public:
     Point measure(const std::string &text, TextRole role = Body);
     bool text(const std::string &text, Rect bounds, TextRole role, SDL_Color color, bool centered = false);
     void fill(Rect bounds, SDL_Color color);
+    void shade(Rect bounds, SDL_Color color);
     void outline(Rect bounds, SDL_Color color);
     bool button(const std::string &label, Rect bounds, State state);
     void slider(Rect bounds, float fraction, State state);

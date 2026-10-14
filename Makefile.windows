@@ -60,7 +60,7 @@ OBJS += hub.o
 OBJS += info.o init.o intro.o items.o 
 OBJS += lineDefs.o loadSave.o
 OBJS += map.o mapData.o mias.o mission.o
-OBJS += objectives.o obstacles.o options.o
+OBJS += objectives.o obstacles.o options.o uiOptionsView.o
 OBJS += particles.o player.o 
 OBJS += resources.o 
 OBJS += spawnPoints.o switches.o 
@@ -100,6 +100,9 @@ mapeditor.exe: $(MAPOBJS)
 
 ui-preview.exe: uiRenderer.o uiPreview.o
 	$(CXX) $(LDFLAGS) $^ -o $@ $(LIBS)
+
+.build/ui/gameOverTest.exe: tests/gameOverTest.cpp src/game.cpp src/game.h $(filter-out main.o game.o,$(GAMEOBJS))
+	$(CXX) $(CXXFLAGS) tests/gameOverTest.cpp $(filter-out main.o game.o,$(GAMEOBJS)) -o $@ $(LIBS)
 
 # cleaning everything that can be automatically recreated with "make".
 clean:

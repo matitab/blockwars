@@ -19,6 +19,12 @@ int main() {
         UI::Rect left = layout.pixels(UI::Rect(0, 0, 33, 48));
         UI::Rect right = layout.pixels(UI::Rect(33, 0, 33, 48));
         assert(left.x + left.w == right.x);
+        UI::Rect image = layout.fitImage(800, 600);
+        assert(std::fabs(image.w / image.h - 4.0f / 3.0f) < 0.001f);
+        assert(image.x >= 0 && image.y >= 0);
+        assert(image.x + image.w <= layout.width() + 0.001f);
+        assert(image.y + image.h <= layout.height() + 0.001f);
+        assert(std::fabs(image.w - layout.width()) < 0.001f || std::fabs(image.h - layout.height()) < 0.001f);
     }
     UI::Layout invalid(0, -10, 0);
     assert(invalid.width() > 0 && invalid.height() > 0);

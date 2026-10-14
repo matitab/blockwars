@@ -35,6 +35,13 @@ public:
         float w = std::max(0.0f, std::min(maxWidth, width() - margin * 2));
         return Rect((width() - w) / 2, margin, w, std::max(0.0f, height() - margin * 2));
     }
+    Rect fitImage(float sourceWidth, float sourceHeight) const {
+        float factor = std::min(width() / std::max(1.0f, sourceWidth),
+            height() / std::max(1.0f, sourceHeight));
+        float w = std::min(width(), sourceWidth * factor);
+        float h = std::min(height(), sourceHeight * factor);
+        return Rect((width() - w) / 2, (height() - h) / 2, w, h);
+    }
     Rect row(Rect area, int index, float rowHeight, float gap) const {
         return Rect(area.x, area.y + index * (rowHeight + gap), area.w, rowHeight);
     }
