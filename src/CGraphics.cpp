@@ -332,7 +332,7 @@ bool Graphics::canShowMedalMessage() const
 	return (medalMessageTimer <= 0);
 }
 
-void Graphics::updateScreen()
+void Graphics::prepareScreenPresent()
 {
 	if (medalMessageTimer > 0)
 	{
@@ -357,7 +357,12 @@ void Graphics::updateScreen()
 	
 	SDL_UpdateTexture(texture, NULL, screen->pixels, screen->w * 4);
 	SDL_RenderCopy(renderer, texture, NULL, NULL);
+}
+
+void Graphics::finishScreenPresent()
+{
 	SDL_RenderPresent(renderer);
+	SDL_RenderSetLogicalSize(renderer, screen->w, screen->h);
 	SDL_RenderClear(renderer);
 
 	if (takeRandomScreenShots)
@@ -388,6 +393,12 @@ void Graphics::updateScreen()
 
 		engine->keyState[SDL_SCANCODE_F10] = engine->keyState[SDL_SCANCODE_LALT] = engine->keyState[SDL_SCANCODE_RETURN] = 0;
 	}
+}
+
+void Graphics::updateScreen()
+{
+	prepareScreenPresent();
+	finishScreenPresent();
 }
 
 void Graphics::delay(int time)

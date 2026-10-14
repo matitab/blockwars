@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "title.h"
+#include "titleMenuView.h"
 
 extern void doMusicInfo(unsigned int);
 
@@ -236,6 +237,15 @@ int title()
 
 	audio.playMusic();
 
+	char uiFontPath[PATH_MAX];
+#if USEPAK
+	snprintf(uiFontPath, sizeof uiFontPath, "%sfont.ttf", engine.userHomeDirectory);
+#else
+	strlcpy(uiFontPath, "data/vera.ttf", sizeof uiFontPath);
+#endif
+	UI::Renderer titleUi(graphics.renderer, uiFontPath);
+	TitleMenuView titleMenuView;
+
 	Uint32 now = SDL_GetTicks();
 
 	unsigned int frameLimit = SDL_GetTicks() + 16;
@@ -243,7 +253,6 @@ int title()
 	while (true)
 	{
 		unsigned int ticks = SDL_GetTicks();
-		graphics.updateScreen();
 
 		engine.getInput();
 		config.populate();
@@ -320,9 +329,26 @@ int title()
 
 		if (allFadedOn)
 		{
-			drawWidgets();
-			audio.playMenuSound(engine.processWidgets());
+			int menuSound = engine.processWidgets();
+			int outputW = 0;
+			int outputH = 0;
+			SDL_GetRendererOutputSize(graphics.renderer, &outputW, &outputH);
+			outputW = max(outputW, 1);
+			outputH = max(outputH, 1);
+			int pointerX = (engine.getMouseX() * outputW) / max(graphics.logicalW(), 1);
+			int pointerY = (engine.getMouseY() * outputH) / max(graphics.logicalH(), 1);
+			int pointerSound = titleMenuView.processPointer(pointerX, pointerY, engine.mouseLeft != 0);
+			audio.playMenuSound(pointerSound ? pointerSound : menuSound);
 		}
+
+		int outputW = 0;
+		int outputH = 0;
+		SDL_GetRendererOutputSize(graphics.renderer, &outputW, &outputH);
+		titleUi.begin(max(outputW, 1), max(outputH, 1), 1.0f);
+		graphics.prepareScreenPresent();
+		if (allFadedOn)
+			titleMenuView.draw(titleUi);
+		graphics.finishScreenPresent();
 
 		if (options)
 		{

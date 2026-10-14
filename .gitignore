@@ -1,5 +1,6 @@
 # Object files
 *.o
+*.d
 *.ko
 *.obj
 *.elf
@@ -39,3 +40,6 @@ ui-preview
 
 # Local build inventory
 .build/
+
+# Temporary files extracted from the pak at runtime
+font.ttf

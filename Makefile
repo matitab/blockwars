@@ -60,8 +60,8 @@ OBJS += objectives.o obstacles.o options.o
 OBJS += particles.o player.o 
 OBJS += resources.o 
 OBJS += spawnPoints.o switches.o 
-OBJS += tankBoss.o teleporters.o title.o trains.o traps.o triggers.o 
-OBJS += weapons.o widgets.o
+OBJS += tankBoss.o teleporters.o title.o titleMenuView.o trains.o traps.o triggers.o 
+OBJS += uiRenderer.o weapons.o widgets.o
 
 GAMEOBJS = $(OBJS) main.o
 MAPOBJS = $(OBJS) mapEditor.o

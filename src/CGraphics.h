@@ -86,6 +86,8 @@ class Graphics {
 	void mapColors();
 	Sprite *getSpriteHead();
 	void setTransparent(SDL_Surface *sprite);
+	void prepareScreenPresent();
+	void finishScreenPresent();
 	void updateScreen();
 	bool canShowMedalMessage() const;
 	void delay(int time);
