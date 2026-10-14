@@ -29,7 +29,7 @@ static int getDefaultClipSize(int weaponId)
 		case WP_MACHINEGUN: return 30;
 		case WP_LASER: return 20;
 		case WP_GRENADES: return 5;
-		case WP_SPREAD: return 8;
+		case WP_SPREAD: return 10;
 		case WP_ROCKETS: return 4;
 		case WP_PLASMARIFLE: return 18;
 		case WP_FLAMETHROWER: return 100;

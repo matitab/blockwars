@@ -21,80 +21,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "init.h"
 
-static bool displayLicense;
-
-void checkForLicense()
-{
-	if (!engine.loadData(_("data/license")))
-	{
-		graphics.showLicenseErrorAndExit();
-	}
-}
-
-/*
-Show the GNU Public License the first time the game is played. Waits 4 seconds
-and then proceeds. THIS MUST NOT BE REMOVED!!!!!
-*/
-void showLicense()
-{
-	SDL_FillRect(graphics.screen, NULL, graphics.black);
-	graphics.delay(1000);
-
-	SDL_FillRect(graphics.screen, NULL, graphics.black);
-	SDL_Surface *pic = graphics.loadImage2x("gfx/main/licensePic.png");
-	// Layout designed for 640x480: centre it on the real surface
-	const int dx = (graphics.logicalW() - 640) / 2;
-	const int dy = (graphics.logicalH() - 480) / 2;
-
-	graphics.blit(pic, (graphics.logicalW() - pic->w) / 2, (graphics.logicalH() - pic->h) / 2, graphics.screen, false);
-	SDL_FreeSurface(pic);
-
-	checkForLicense();
-
-	char line[255];
-	int y = 0;
-
-	char *token = strtok((char*)engine.dataBuffer, "\n");
-
-	while (true)
-	{
-		sscanf(token, "%d %[^\n\r]", &y, line);
-		
-		if (y == -1)
-		{
-			break;
-		}
-
-		graphics.drawString(line, 320 + dx, y + dy, true, graphics.screen);
-
-		token = strtok(NULL, "\n");
-
-		if (token == NULL)
-		{
-			break;
-		}
-	}
-
-	graphics.delay(4000);
-
-	graphics.drawString(_("Press Space to Continue..."), 320 + dx, 440 + dy, true, graphics.screen);
-
-	engine.flushInput();
-	engine.clearInput();
-
-	while (true)
-	{
-		graphics.updateScreen();
-		engine.getInput();
-		config.populate();
-		if (engine.userAccepts())
-			break;
-		SDL_Delay(16);
-	}
-	
-	SDL_FillRect(graphics.screen, NULL, graphics.black);
-	graphics.delay(1000);
-}
 
 #if UNIX
 void setupUserHomeDirectory()
@@ -228,58 +154,6 @@ void saveConfig()
 	debug(("Output Type = %d\n", game.output));
 }
 
-//
-// see if we can load the private keyState
-//
-int initMedalService(void *data)
-{
-	(void)data;
-
-	SDL_mutexP(medalServer.lock);
-	
-	char connectMessage[1024];
-	snprintf(connectMessage, sizeof connectMessage, "Contacting Medal Server - %s:%d", MEDAL_SERVER_HOST, MEDAL_SERVER_PORT);
-	
-	graphics.showMedalMessage(-1, connectMessage);
-	
-	char keyPath[PATH_MAX];
-	char privateKey[20];
-
-	snprintf(keyPath, sizeof keyPath, "%smedalKey", engine.userHomeDirectory);
-	
-	debug(("Loading private key from %s\n", keyPath));
-	
-	FILE *fp = fopen(keyPath, "rb");
-	
-	if (!fp)
-	{
-		graphics.showMedalMessage(-1, "No Medal Key found - Online functions disabled");
-		SDL_mutexV(medalServer.lock);
-		return 0;
-	}
-	
-	if (fscanf(fp, "%19s", privateKey) != 1)
-	{
-		graphics.showMedalMessage(-1, "Medal Key file corrupt - Online functions disabled");
-		SDL_mutexV(medalServer.lock);
-		fclose(fp);
-		return 0;
-	}
-	
-	fclose(fp);
-		
-	if (!medalServer.connect(privateKey))
-	{
-		graphics.showMedalMessage(-1, "Medal Server Connection Failed - Online functions disabled");
-		return 0;
-	}
-	
-	graphics.showMedalMessage(-1, "Connected to Medal Server");
-	
-	SDL_mutexV(medalServer.lock);
-	
-	return 1;
-}
 
 void initConfig()
 {
@@ -287,7 +161,7 @@ void initConfig()
 	setupUserHomeDirectory();
 	#endif
 
-	displayLicense = loadConfig();
+	loadConfig();
 }
 
 /*
@@ -456,31 +330,6 @@ void initSystem()
 		graphics.showRootWarning();
 	}
 
-	if (displayLicense)
-	{
-		showLicense();
-	}
-	else
-	{
-		checkForLicense();
-	}
-	
-	if (SDLNet_Init() < 0)
-	{
-		printf("SDLNet_Init: %s\n", SDLNet_GetError());
-	}
-	else
-	{
-		SDL_Thread *thread = SDL_CreateThread(initMedalService, "MedalService", NULL);
-	
-		if (thread == NULL)
-		{
-			printf("Unable to create thread: %s\n", SDL_GetError());
-			printf("Calling medal server directly\n");
-			initMedalService(NULL);
-			return;
-		}
-	}
 	
 	engine.saveConfig = true;
 

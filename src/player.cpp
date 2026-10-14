@@ -57,7 +57,7 @@ static const int WEAPON_PLAYER_ROCKET = 21; // player rocket launcher (data/weap
 static const int WEAPON_PLAYER_PLASMA = 22; // player plasma rifle (data/weapons)
 static const int GRENADE_SHOTS = 3;
 static const int ROCKET_SHOTS = 1;
-static const int PLASMA_SHOTS = 18;
+static const int PLASMA_SHOTS = 12;
 
 // Shots allowed by the current weapon, or 0 if it is not a limited-use weapon
 static int getLimitedShots()
@@ -69,6 +69,14 @@ static int getLimitedShots()
 	if (player.currentWeapon == &weapon[WEAPON_PLAYER_PLASMA])
 		return PLASMA_SHOTS;
 	return 0;
+}
+
+// Underwater only the pistol fires (addBullet ignores every other weapon), so only it spends a shot there
+static bool playerShotSpendsAmmo()
+{
+	if (player.environment != ENV_WATER)
+		return true;
+	return (player.currentWeapon == &weapon[WP_PISTOL]) || (player.currentWeapon == &weapon[WP_AIMEDPISTOL]);
 }
 
 void resetPlayerAmmo()
@@ -678,6 +686,8 @@ void doPlayer()
 		int other = 1 - game.activeSlot;
 		if (game.equippedWeapons[other] != -1)
 		{
+			// The spent weapon leaves its slot before switching, otherwise it would come back with a full clip
+			game.equippedWeapons[game.activeSlot] = -1;
 			switchToSlot(other);
 		}
 		else
@@ -713,8 +723,8 @@ void doPlayer()
 						addBullet(&player, player.currentWeapon->getSpeed(player.face), 2);
 						addBullet(&player, player.currentWeapon->getSpeed(player.face), -2);
 					}
-					// Only the pistol can fire underwater, so a limited-use weapon keeps its shot there
-					if ((playerAmmoMax > 0) && (!((getLimitedShots() > 0) && (player.environment == ENV_WATER))))
+					// No shot was fired if addBullet ignored it underwater, so nothing is spent
+					if ((playerAmmoMax > 0) && (playerShotSpendsAmmo()))
 					{
 						playerAmmo--;
 						if (playerAmmo == 0)

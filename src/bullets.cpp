@@ -301,6 +301,12 @@ static float enemyThrowDX = 0.0f;
 static float enemyThrowDY = 0.0f;
 // ---- ENEMY GRENADE END ----
 
+// Enemy machine guns (straight and aimed) shoot faster than the weapon data says; the player's keep the data speed.
+// The speed is capped because a bullet is only tested once per frame: a step longer than Bob (or a brick)
+// could skip over him (or over a wall).
+static const float ENEMY_MACHINEGUN_SPEED_MULT = 1.5f;
+static const float ENEMY_MACHINEGUN_MAX_SPEED = 16.0f; // pixels per frame
+
 void addBullet(Entity *owner, float dx, float dy)
 {
 	if (!(owner->flags & ENT_BOSS))
@@ -386,6 +392,27 @@ void addBullet(Entity *owner, float dx, float dy)
 
 		bullet->dx *= owner->currentWeapon->dx;
 		bullet->dy *= owner->currentWeapon->dy;
+	}
+
+	// Faster enemy machine gun bullets
+	if ((owner != &player) && (owner != &engine.world) && (!(owner->flags & ENT_BOSS)) &&
+		((owner->currentWeapon == &weapon[WP_MACHINEGUN]) || (owner->currentWeapon == &weapon[WP_AIMEDMACHINE])))
+	{
+		float speed = sqrtf((bullet->dx * bullet->dx) + (bullet->dy * bullet->dy));
+		float scale = ENEMY_MACHINEGUN_SPEED_MULT;
+
+		if ((speed * scale) > ENEMY_MACHINEGUN_MAX_SPEED)
+			scale = ENEMY_MACHINEGUN_MAX_SPEED / speed;
+
+		if (scale > 1.0f)
+		{
+			bullet->dx *= scale;
+			bullet->dy *= scale;
+
+			// same range as before: it arrives sooner, it does not fly farther
+			int life = (int)ceilf(bullet->health / scale);
+			bullet->health = (life < 1) ? 1 : life;
+		}
 	}
 
 	// Enemy grenade thrown with addEnemyGrenade(): use the launch velocity it worked out

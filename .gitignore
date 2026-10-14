@@ -29,9 +29,13 @@
 *.x86_64
 *.hex
 blobwars
+ui-preview
 
 # Debug files
 *.dSYM/
 
 # Pak files
 *.pak
+
+# Local build inventory
+.build/

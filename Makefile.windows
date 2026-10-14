@@ -98,9 +98,12 @@ pak.exe: $(PAKOBJS)
 mapeditor.exe: $(MAPOBJS)
 	$(CXX) $(LDFLAGS) $(MAPOBJS) -o mapeditor.exe $(LIBS) -mwindows
 
+ui-preview.exe: uiRenderer.o uiPreview.o
+	$(CXX) $(LDFLAGS) $^ -o $@ $(LIBS)
+
 # cleaning everything that can be automatically recreated with "make".
 clean:
-	$(RM) $(GAMEOBJS) mapEditor.o pak.o $(PROG) $(PAKNAME) pak.exe mapeditor.exe $(LOCALE_MO) *.d
+	$(RM) $(GAMEOBJS) mapEditor.o pak.o uiRenderer.o uiPreview.o $(PROG) $(PAKNAME) pak.exe mapeditor.exe ui-preview.exe $(LOCALE_MO) *.d
 
 $(PAKNAME): pak.exe
 	./pak $(DATA) $(PAKNAME)
@@ -111,3 +114,4 @@ buildpak: $(PAKNAME)
 # va al final para no cambiar la regla por defecto (all)
 -include $(GAMEOBJS:.o=.d)
 -include $(PAKOBJS:.o=.d)
+-include uiRenderer.d uiPreview.d

@@ -94,9 +94,14 @@ pak: $(PAKOBJS)
 mapeditor: $(MAPOBJS)
 	$(CXX) $(LDFLAGS) $(MAPOBJS) -o mapeditor $(LIBS)
 
+ui-preview: uiRenderer.o uiPreview.o
+	$(CXX) $(LDFLAGS) $^ -o $@ $(LIBS)
+
+-include uiRenderer.d uiPreview.d
+
 # cleaning everything that can be automatically recreated with "make".
 clean:
-	$(RM) $(GAMEOBJS) mapEditor.o pak.o $(PROG) $(PAKNAME) pak mapeditor $(LOCALE_MO)
+	$(RM) $(GAMEOBJS) mapEditor.o pak.o uiRenderer.o uiPreview.o uiRenderer.d uiPreview.d $(PROG) $(PAKNAME) pak mapeditor ui-preview $(LOCALE_MO)
 	
 $(PAKNAME): pak
 	./pak $(DATA) $(PAKNAME)

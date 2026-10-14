@@ -22,6 +22,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <map>
 #include <algorithm>
 #include "enemies.h"
+#include "combatBalance.h"
+
+static CombatBalance combatBalance;
 
 // Enemy grenade throws (bullets.cpp): plan says how much charge a throw needs, add makes the throw
 extern bool planEnemyGrenade(Entity *owner, float *power);
@@ -126,117 +129,127 @@ static std::map<Entity*, EnemyAIState> aiState;
 static const float AWARE_MAX = 100.0f;
 static const float AWARE_SUSPICIOUS = 30.0f;
 static const float AWARE_ALERT = 100.0f;
-static const float AWARE_DECAY = 0.16f;  // lost per frame once the hold time is over
-static const int ALERT_HOLD = 360;       // frames an alerted enemy keeps looking before calming down
-static const int SUSPICIOUS_HOLD = 120;  // same for an enemy that was only suspicious
-static const int VISION_RANGE = 720;     // farthest they can notice you
-static const int BEHIND_RANGE = 96;      // they only notice you behind their back this close
-static const float ALLY_ALERT_LEVEL = 65.0f;  // what allies get told when someone spots you / is shot
-static const float HEAR_LEVEL = 45.0f;        // what a nearby gunshot does
-static const int ALERT_RANGE_X = 300;   // chain alert radius
-static const int ALERT_RANGE_Y = 150;
-static const int HEAR_RANGE_X = 420;    // how far a gunshot is heard
-static const int HEAR_RANGE_Y = 220;
-static const int BURST_PAUSE = 50;      // extra wait after a burst
+static const float &AWARE_DECAY = combatBalance.AWARE_DECAY;  // lost per frame once the hold time is over
+static const int &ALERT_HOLD = combatBalance.ALERT_HOLD;       // frames an alerted enemy keeps looking before calming down
+static const int &SUSPICIOUS_HOLD = combatBalance.SUSPICIOUS_HOLD;  // same for an enemy that was only suspicious
+static const int &VISION_RANGE = combatBalance.VISION_RANGE;     // farthest they can notice you
+static const int &BEHIND_RANGE = combatBalance.BEHIND_RANGE;      // they only notice you behind their back this close
+static const float &ALLY_ALERT_LEVEL = combatBalance.ALLY_ALERT_LEVEL;  // what allies get told when someone spots you / is shot
+static const float &HEAR_LEVEL = combatBalance.HEAR_LEVEL;        // what a nearby gunshot does
+static const int &ALERT_RANGE_X = combatBalance.ALERT_RANGE_X;   // chain alert radius
+static const int &ALERT_RANGE_Y = combatBalance.ALERT_RANGE_Y;
+static const int &HEAR_RANGE_X = combatBalance.HEAR_RANGE_X;    // how far a gunshot is heard
+static const int &HEAR_RANGE_Y = combatBalance.HEAR_RANGE_Y;
+static const int &BURST_PAUSE = combatBalance.BURST_PAUSE;      // extra wait after a burst
 
 // Preferred distance from player, by weapon type (pixels)
-static const int DIST_CLOSE = 150;      // pistol, machine gun
-static const int DIST_MEDIUM = 300;     // laser, spread
-static const int DIST_FAR = 450;        // grenades, rockets
+static const int &DIST_CLOSE = combatBalance.DIST_CLOSE;      // pistol, machine gun
+static const int &DIST_MEDIUM = combatBalance.DIST_MEDIUM;     // laser, spread
+static const int &DIST_FAR = combatBalance.DIST_FAR;        // grenades, rockets
 
 // Separation between enemies (pixels) to avoid stacking
-static const int ENEMY_SEPARATION = 64;
+static const int &ENEMY_SEPARATION = combatBalance.ENEMY_SEPARATION;
 
 // Grenade safety: frames to wait after throwing before throwing another
-static const int GRENADE_COOLDOWN = 120; // about 2 seconds
-static const int GRENADE_SAFE_DISTANCE = 150; // stay this far from own grenade
-static const int GRENADE_CHARGE_FRAMES = 45;  // extra hold time of a full-power throw (about 0.75 s)
+static const int &GRENADE_COOLDOWN = combatBalance.GRENADE_COOLDOWN; // about 2 seconds
+static const int &GRENADE_SAFE_DISTANCE = combatBalance.GRENADE_SAFE_DISTANCE; // stay this far from own grenade
+static const int &GRENADE_CHARGE_FRAMES = combatBalance.GRENADE_CHARGE_FRAMES;  // extra hold time of a full-power throw (about 0.75 s)
 
 // Droid Laser (weapon 23 in data/weapons): magazine, reload and firing modes of the Eye Droids
 static const int WEAPON_DROID_LASER = 23;
-static const float LASER_CLIP_SIZE = 12.0f;    // energy before it has to reload
-static const int LASER_RELOAD_FRAMES = 150;     // reload time on the easiest difficulty
-static const int LASER_RELOAD_SKILL_CUT = 20;   // frames shaved off per difficulty level
+static const float &LASER_CLIP_SIZE = combatBalance.LASER_CLIP_SIZE;    // energy before it has to reload
+static const int &LASER_RELOAD_FRAMES = combatBalance.LASER_RELOAD_FRAMES;     // reload time on the easiest difficulty
+static const int &LASER_RELOAD_SKILL_CUT = combatBalance.LASER_RELOAD_SKILL_CUT;   // frames shaved off per difficulty level
 static const int LASER_MODE_SINGLE = 0;
 static const int LASER_MODE_BURST = 1;
 static const int LASER_MODE_SWEEP = 2;          // fan-shaped volley crossing the player
 static const int LASER_MODE_BEAM = 3;           // continuous beam
-static const int LASER_BURST_CHANCE = 35;       // % of volleys that are bursts
-static const int LASER_SWEEP_BASE_CHANCE = 10;  // % of sweeps on the easiest difficulty...
-static const int LASER_SWEEP_SKILL_CHANCE = 10; // ...plus this per difficulty level
-static const int LASER_SWEEP_SHOTS = 4;         // bullets in a sweep, plus 1 per difficulty level
-static const int LASER_SWEEP_GAP = 5;           // frames between the bullets of a sweep
-static const int LASER_SWEEP_WARNING = 12;      // extra warning before a sweep
-static const float LASER_SWEEP_HALF_WIDTH = 55.0f; // pixels around the player the sweep covers
-static const float LASER_SWEEP_MIN_ANGLE = 4.0f;   // degrees, half width of the fan
-static const float LASER_SWEEP_MAX_ANGLE = 25.0f;
-static const int LASER_BEAM_BASE_CHANCE = 10;   // % of beams on the easiest difficulty...
-static const int LASER_BEAM_SKILL_CHANCE = 10;  // ...plus this per difficulty level
-static const int LASER_BEAM_FRAMES = 90;        // how long the beam stays on (1.5 s)
-static const float LASER_BEAM_CLIP_COST = 3.0f; // energy one whole beam uses; it can still fire when other modes do not fit
-static const int LASER_BEAM_WARNING = 12;       // extra warning before a beam
-static const int LASER_BEAM_TICK = 15;          // frames between two hits while the beam touches Bob
-static const int LASER_BEAM_DAMAGE = 1;         // health Bob loses per hit (health is a whole number: the beam is weaker through its rate, not through each hit)
-static const int LASER_BEAM_RANGE = 720;        // longest the beam can be (pixels)
-static const int LASER_BEAM_STEP = 4;           // pixels between the points tested along the beam
-static const float LASER_BEAM_HALF_WIDTH = 55.0f; // pixels around the player the beam sweeps across
-static const float LASER_BEAM_MIN_ANGLE = 4.0f;   // degrees, half width of the sweep
-static const float LASER_BEAM_MAX_ANGLE = 25.0f;
+static const int &LASER_BURST_CHANCE = combatBalance.LASER_BURST_CHANCE;       // % of volleys that are bursts
+static const int &LASER_SWEEP_BASE_CHANCE = combatBalance.LASER_SWEEP_BASE_CHANCE;  // % of sweeps on the easiest difficulty...
+static const int &LASER_SWEEP_SKILL_CHANCE = combatBalance.LASER_SWEEP_SKILL_CHANCE; // ...plus this per difficulty level
+static const int &LASER_SWEEP_SHOTS = combatBalance.LASER_SWEEP_SHOTS;         // bullets in a sweep, plus 1 per difficulty level
+static const int &LASER_SWEEP_GAP = combatBalance.LASER_SWEEP_GAP;           // frames between the bullets of a sweep
+static const int &LASER_SWEEP_WARNING = combatBalance.LASER_SWEEP_WARNING;      // extra warning before a sweep
+static const float &LASER_SWEEP_HALF_WIDTH = combatBalance.LASER_SWEEP_HALF_WIDTH; // pixels around the player the sweep covers
+static const float &LASER_SWEEP_MIN_ANGLE = combatBalance.LASER_SWEEP_MIN_ANGLE;   // degrees, half width of the fan
+static const float &LASER_SWEEP_MAX_ANGLE = combatBalance.LASER_SWEEP_MAX_ANGLE;
+static const int &LASER_BEAM_BASE_CHANCE = combatBalance.LASER_BEAM_BASE_CHANCE;   // % of beams on the easiest difficulty...
+static const int &LASER_BEAM_SKILL_CHANCE = combatBalance.LASER_BEAM_SKILL_CHANCE;  // ...plus this per difficulty level
+static const int &LASER_BEAM_FRAMES = combatBalance.LASER_BEAM_FRAMES;        // how long the beam stays on (1.5 s)
+static const float &LASER_BEAM_CLIP_COST = combatBalance.LASER_BEAM_CLIP_COST; // energy one whole beam uses; it can still fire when other modes do not fit
+static const int &LASER_BEAM_WARNING = combatBalance.LASER_BEAM_WARNING;       // extra warning before a beam
+static const int &LASER_BEAM_TICK = combatBalance.LASER_BEAM_TICK;          // frames between two hits while the beam touches Bob
+static const int &LASER_BEAM_DAMAGE = combatBalance.LASER_BEAM_DAMAGE;         // health Bob loses per hit (health is a whole number: the beam is weaker through its rate, not through each hit)
+static const int &LASER_BEAM_RANGE = combatBalance.LASER_BEAM_RANGE;        // longest the beam can be (pixels)
+static const int &LASER_BEAM_STEP = combatBalance.LASER_BEAM_STEP;           // pixels between the points tested along the beam
+static const float &LASER_BEAM_HALF_WIDTH = combatBalance.LASER_BEAM_HALF_WIDTH; // pixels around the player the beam sweeps across
+static const float &LASER_BEAM_MIN_ANGLE = combatBalance.LASER_BEAM_MIN_ANGLE;   // degrees, half width of the sweep
+static const float &LASER_BEAM_MAX_ANGLE = combatBalance.LASER_BEAM_MAX_ANGLE;
 
 static const char *BIOMECH_SOLDIER_NAME = "BioMech Soldier";
 static const char *BIOMECH_MINIBOSS_NAME = "BioMech Mini Boss";
-static const int BIOMECH_LASER_CLIP_SIZE = 12;
-static const int BIOMECH_LASER_BURST_SHOTS = 3;
-static const int BIOMECH_LASER_SHOT_GAP = 8;
-static const int BIOMECH_LASER_BURST_INTERVAL = MAX_FPS * 2;
-static const int BIOMECH_LASER_RELOAD = MAX_FPS * 10;
-static const int BIOMECH_LASER_WINDUP = 24;
-static const int BIOMECH_ATTACK_ANIMATION_FRAMES = 24;
-static const int BIOMECH_MELEE_DAMAGE = 2;
-static const int BIOMECH_MELEE_PARTICLE_RANGE = 128;
-static const int BIOMECH_MELEE_PARTICLE_GAP = 8;
-static const int BIOMECH_MELEE_COOLDOWN = MAX_FPS;
+static const int &BIOMECH_LASER_CLIP_SIZE = combatBalance.BIOMECH_LASER_CLIP_SIZE;
+static const int &BIOMECH_LASER_RELOAD = combatBalance.BIOMECH_LASER_RELOAD;
+// false: the BioMech only fires single shots and bursts. true: it also uses the Eye Droid sweep and beam
+static const bool &BIOMECH_USES_ALL_LASER_MODES = combatBalance.BIOMECH_USES_ALL_LASER_MODES;
+// Rest between two volleys (the old cycle was 2 s from one windup to the next)
+static const int &BIOMECH_VOLLEY_COOLDOWN = combatBalance.BIOMECH_VOLLEY_COOLDOWN;
+// false: the BioMech keeps closing in on Bob (it is a claw fighter). true: it holds the preferred distance like a gunner
+static const bool &BIOMECH_KEEPS_DISTANCE = combatBalance.BIOMECH_KEEPS_DISTANCE;
+static const int &BIOMECH_ATTACK_ANIMATION_FRAMES = combatBalance.BIOMECH_ATTACK_ANIMATION_FRAMES;
+static const int &BIOMECH_MELEE_DAMAGE = combatBalance.BIOMECH_MELEE_DAMAGE;
+static const int &BIOMECH_MELEE_PARTICLE_RANGE = combatBalance.BIOMECH_MELEE_PARTICLE_RANGE;
+static const int &BIOMECH_MELEE_PARTICLE_GAP = combatBalance.BIOMECH_MELEE_PARTICLE_GAP;
+static const int &BIOMECH_MELEE_COOLDOWN = combatBalance.BIOMECH_MELEE_COOLDOWN;
 
 // Utility droid (the common Eye Droid): electromagnetic shield, dash pool and recharge
 static const char *UTILITY_DROID_NAME = "Eye Droid V1.0";
-static const int DROID_SHIELD_POINTS = 5;       // shield points at spawn
-static const int DROID_MAX_DASHES = 3;          // teleport dashes in the pool
-static const int DASH_SHIELD_COST = 1;          // shield points one dash consumes (the shield has DROID_SHIELD_POINTS)
-static const int DROID_RECHARGE_FRAMES = MAX_FPS * 10; // once the shield breaks (or the dashes run out) it is back, full, after 10 s (not before)
-static const int DROID_RECHARGE_CAP = MAX_FPS * 10;    // the aggression penalty can never push the timer past this
-static const int DROID_STAGGER_FRAMES = 4;      // a direct hit with the shield down freezes it this long
-static const int DROID_STAGGER_IMMUNITY = 20;   // ...and it can't be frozen again for this long (no stun-lock)
-static const int DROID_DEFLECT_COST = 2;        // shield points one grenade deflection consumes
-static const int DROID_DEFLECT_MARGIN = 40;     // the repulsor field reaches this far (pixels) beyond the droid's half size
-static const int DASH_MIN_RADIUS = 64;          // a dash jumps at least this far (pixels)
-static const int DASH_MAX_RADIUS = 160;         // ...and at most this far
-static const int DASH_TRIES = 8;                // candidate spots tested per dash
-static const int DASH_COOLDOWN = 40;            // frames between two dashes
-static const int DASH_HIT_CHANCE = 0;           // % chance to dash after being hit (0: it no longer reacts to hits, it dodges the shot itself)
-static const int DASH_DODGE_CHANCE = 100;       // % chance that a droid in the line of fire dashes the instant the player shoots
-static const int DASH_DODGE_RANGE = 1000;       // farthest a droid reacts to a shot (pixels along the line of fire)
-static const int DASH_DODGE_CLEARANCE = 40;     // extra pixels a dodge spot keeps from the line of fire (on top of the droid's half size)
-static const int DASH_CLOSE_RANGE = 110;        // the player this close (pixels) makes it dash away
-static const int DASH_CLOSE_CHANCE = 8;         // % per frame while the player is that close
-static const int DASH_IDLE_PERMILLE = 4;        // per-mille per frame of a random dash while alert and seeing the player
+static const int &DROID_SHIELD_POINTS = combatBalance.DROID_SHIELD_POINTS;       // shield points at spawn
+static const int &DROID_MAX_DASHES = combatBalance.DROID_MAX_DASHES;          // teleport dashes in the pool
+static const int &DASH_SHIELD_COST = combatBalance.DASH_SHIELD_COST;          // shield points one dash consumes (the shield has DROID_SHIELD_POINTS)
+static const int &DROID_RECHARGE_FRAMES = combatBalance.DROID_RECHARGE_FRAMES; // once the shield breaks (or the dashes run out) it is back, full, after 10 s (not before)
+static const int &DROID_RECHARGE_CAP = combatBalance.DROID_RECHARGE_CAP;    // the aggression penalty can never push the timer past this
+static const int &DROID_STAGGER_FRAMES = combatBalance.DROID_STAGGER_FRAMES;      // a direct hit with the shield down freezes it this long
+static const int &DROID_STAGGER_IMMUNITY = combatBalance.DROID_STAGGER_IMMUNITY;   // ...and it can't be frozen again for this long (no stun-lock)
+static const int &DROID_DEFLECT_COST = combatBalance.DROID_DEFLECT_COST;        // shield points one grenade deflection consumes
+static const int &DROID_DEFLECT_MARGIN = combatBalance.DROID_DEFLECT_MARGIN;     // the repulsor field reaches this far (pixels) beyond the droid's half size
+static const int &DASH_MIN_RADIUS = combatBalance.DASH_MIN_RADIUS;          // a dash jumps at least this far (pixels)
+static const int &DASH_MAX_RADIUS = combatBalance.DASH_MAX_RADIUS;         // ...and at most this far
+static const int &DASH_TRIES = combatBalance.DASH_TRIES;                // candidate spots tested per dash
+static const int &DASH_COOLDOWN = combatBalance.DASH_COOLDOWN;            // frames between two dashes
+static const int &DASH_HIT_CHANCE = combatBalance.DASH_HIT_CHANCE;           // % chance to dash after being hit (0: it no longer reacts to hits, it dodges the shot itself)
+static const int &DASH_DODGE_CHANCE = combatBalance.DASH_DODGE_CHANCE;       // % chance that a droid in the line of fire dashes the instant the player shoots
+static const int &DASH_DODGE_RANGE = combatBalance.DASH_DODGE_RANGE;       // farthest a droid reacts to a shot (pixels along the line of fire)
+static const int &DASH_DODGE_CLEARANCE = combatBalance.DASH_DODGE_CLEARANCE;     // extra pixels a dodge spot keeps from the line of fire (on top of the droid's half size)
+static const int &DASH_CLOSE_RANGE = combatBalance.DASH_CLOSE_RANGE;        // the player this close (pixels) makes it dash away
+static const int &DASH_CLOSE_CHANCE = combatBalance.DASH_CLOSE_CHANCE;         // % per frame while the player is that close
+static const int &DASH_IDLE_PERMILLE = combatBalance.DASH_IDLE_PERMILLE;        // per-mille per frame of a random dash while alert and seeing the player
 
 // Safe mode: starts when the shield breaks and lasts DROID_RECHARGE_FRAMES from that moment
-static const int DROID_SAFE_MOVE_PERIOD = 3;    // it crawls: it only moves on one frame in this many
-static const int DASH_SAFE_COOLDOWN = 20;       // frames between dashes in safe mode (dodging is what it concentrates on)
-static const int DASH_SAFE_CLOSE_CHANCE = 30;   // % per frame to dash away while Bob is within DASH_CLOSE_RANGE
-static const int DROID_COVER_STEP = 48;         // cover points are looked for in rings this far apart (pixels)...
-static const int DROID_COVER_RADIUS = 288;      // ...up to this far from the droid
-static const int DROID_COVER_DIRS = 12;         // points tested per ring
-static const int DROID_COVER_RECHECK = 15;      // frames between checks that the chosen cover is still hidden from Bob
-static const int DROID_COVER_RETRY = 30;        // frames to wait before searching again after finding nothing
-static const int DROID_COVER_STUCK_FRAMES = 45; // frames between the checks that it is getting closer to its cover
-static const int DROID_COVER_STUCK_MOVE = 3;    // moving less than this (pixels) between two checks = stuck, the spot is dropped
-static const int DROID_COVER_ARRIVE_DIST = 8;   // this close (pixels, x plus y) to the spot counts as arrived
-static const int DASH_TRIES_HIDDEN = 16;        // candidate spots tested per dash in safe mode (it looks for one Bob can't see)
-static const int DROID_AGGRO_BOB_HEALTH = 2;    // Bob with this much health or less (and in its sights) tempts it to shoot
-static const int DROID_AGGRO_CHANCE = 10;       // % per frame that it gives in to that temptation
-static const int DROID_AGGRO_BURST_RANGE = 200; // closer than this (pixels) it prefers a burst, farther a beam
-static const int DROID_AGGRO_PENALTY_FRAMES = MAX_FPS * 5; // a single shot from safe mode adds this to the recharge (up to DROID_RECHARGE_CAP)
+static const int &DROID_SAFE_MOVE_PERIOD = combatBalance.DROID_SAFE_MOVE_PERIOD;    // it crawls: it only moves on one frame in this many
+static const int &DASH_SAFE_COOLDOWN = combatBalance.DASH_SAFE_COOLDOWN;       // frames between dashes in safe mode (dodging is what it concentrates on)
+static const int &DASH_SAFE_CLOSE_CHANCE = combatBalance.DASH_SAFE_CLOSE_CHANCE;   // % per frame to dash away while Bob is within DASH_CLOSE_RANGE
+static const int &DROID_COVER_STEP = combatBalance.DROID_COVER_STEP;         // cover points are looked for in rings this far apart (pixels)...
+static const int &DROID_COVER_RADIUS = combatBalance.DROID_COVER_RADIUS;      // ...up to this far from the droid
+static const int &DROID_COVER_DIRS = combatBalance.DROID_COVER_DIRS;         // points tested per ring
+static const int &DROID_COVER_RECHECK = combatBalance.DROID_COVER_RECHECK;      // frames between checks that the chosen cover is still hidden from Bob
+static const int &DROID_COVER_RETRY = combatBalance.DROID_COVER_RETRY;        // frames to wait before searching again after finding nothing
+static const int &DROID_COVER_STUCK_FRAMES = combatBalance.DROID_COVER_STUCK_FRAMES; // frames between the checks that it is getting closer to its cover
+static const int &DROID_COVER_STUCK_MOVE = combatBalance.DROID_COVER_STUCK_MOVE;    // moving less than this (pixels) between two checks = stuck, the spot is dropped
+static const int &DROID_COVER_ARRIVE_DIST = combatBalance.DROID_COVER_ARRIVE_DIST;   // this close (pixels, x plus y) to the spot counts as arrived
+static const int &DASH_TRIES_HIDDEN = combatBalance.DASH_TRIES_HIDDEN;        // candidate spots tested per dash in safe mode (it looks for one Bob can't see)
+static const int &DROID_AGGRO_BOB_HEALTH = combatBalance.DROID_AGGRO_BOB_HEALTH;    // Bob with this much health or less (and in its sights) tempts it to shoot
+static const int &DROID_AGGRO_CHANCE = combatBalance.DROID_AGGRO_CHANCE;       // % per frame that it gives in to that temptation
+static const int &DROID_AGGRO_BURST_RANGE = combatBalance.DROID_AGGRO_BURST_RANGE; // closer than this (pixels) it prefers a burst, farther a beam
+static const int &DROID_AGGRO_PENALTY_FRAMES = combatBalance.DROID_AGGRO_PENALTY_FRAMES; // a single shot from safe mode adds this to the recharge (up to DROID_RECHARGE_CAP)
+
+// BioMech mini boss: the Eye Droid V1.0 electromagnetic shield (soaks damage, repulses grenades, shatters, comes back
+// full after DROID_RECHARGE_FRAMES) without the droid's dashes, stagger or safe mode: with the shield down it keeps attacking
+static const int &BIOMECH_SHIELD_POINTS = combatBalance.BIOMECH_SHIELD_POINTS;
+static const float BIOMECH_BUBBLE_PAD_FRACTION = 0.12f; // the bubble extends this fraction of the sprite size on each side (a big rectangular sprite needs more room than a small round one)
+static const float BIOMECH_BUBBLE_MAX_RIM = 6.0f;       // thickest bright rim of the bubble (pixels), so a big bubble doesn't get a heavy edge
+static const int BIOMECH_SHIELD_BREAK_DEBRIS = 45;      // pieces thrown when the shield shatters (the droid throws 18)
+static const int BIOMECH_SHIELD_RETURN_SPARKS = 24;     // cyan sparks when the shield comes back
 
 static unsigned int aiFrame = 0;        // frame counter, used for the attack turns
 static int attackCooldown = 0;          // frames until another enemy may start attacking
@@ -314,6 +327,44 @@ static void initUtilityDroid(Entity *enemy, EnemyAIState &st)
 	st.dashCooldown = 0;
 	st.dashReact = false;
 	st.staggerImmune = 0;
+}
+
+// The BioMech mini boss gets the same shield points as the Eye Droid (and nothing else of the utility droid)
+static void initBiomechShield(Entity *enemy, EnemyAIState &st)
+{
+	if (strcmp(enemy->name, BIOMECH_MINIBOSS_NAME) != 0)
+		return;
+
+	st.shield = st.maxShield = BIOMECH_SHIELD_POINTS;
+	st.rechargeTimer = 0;
+}
+
+// Eye Droids V2.0 to V4.0 carry a smaller electromagnetic shield: it soaks damage, repulses grenades while it has
+// DROID_DEFLECT_COST points and comes back full DROID_RECHARGE_FRAMES after it broke (updateEnemyShield).
+// They have no dashes, stagger or safe mode: with the shield down they keep attacking.
+static const int ENEMY_SHIELD_RETURN_SPARKS = 12;
+
+static int getEnemyShieldPoints(Entity *enemy)
+{
+	if (strcmp(enemy->name, "Eye Droid V2.0") == 0)
+		return 3;
+	if (strcmp(enemy->name, "Eye Droid V3.0") == 0)
+		return 3;
+	if (strcmp(enemy->name, "Eye Droid V4.0") == 0)
+		return 5;
+
+	return 0;
+}
+
+static void initEnemyShield(Entity *enemy, EnemyAIState &st)
+{
+	int points = getEnemyShieldPoints(enemy);
+
+	if (points <= 0)
+		return;
+
+	st.shield = st.maxShield = points;
+	st.rechargeTimer = 0;
 }
 
 // The shield broke or the dash pool ran dry: safe mode. Weapons off (droidSafeAggression is the one exception),
@@ -492,20 +543,20 @@ static const int MOVE_PRIO_SEPARATION = 3; // don't stack on other enemies
 static const int MOVE_PRIO_SHOT_EVADE = 4;  // move out of a player's shot line
 static const int MOVE_PRIO_GRENADE = 5;    // get away from a grenade (survival)
 static const int MOVE_PRIO_ESCAPE  = 6;    // BioMech: get out of acid/slime (top priority)
-static const int SHOT_EVADE_COOLDOWN = MAX_FPS;
-static const int SHOT_EVADE_FRAMES = 60;
-static const int SHOT_EVADE_DISTANCE = 80;
-static const int SHOT_EVADE_CHANCE = 30;
-static const int SHOT_DODGE_LOOKAHEAD = 12;
+static const int &SHOT_EVADE_COOLDOWN = combatBalance.SHOT_EVADE_COOLDOWN;
+static const int &SHOT_EVADE_FRAMES = combatBalance.SHOT_EVADE_FRAMES;
+static const int &SHOT_EVADE_DISTANCE = combatBalance.SHOT_EVADE_DISTANCE;
+static const int &SHOT_EVADE_CHANCE = combatBalance.SHOT_EVADE_CHANCE;
+static const int &SHOT_DODGE_LOOKAHEAD = combatBalance.SHOT_DODGE_LOOKAHEAD;
 
 // Active search: after losing sight of the player, an enemy that reaches the last known
 // position sweeps the area around it (one side, then the other) until it calms down.
-static const int SEARCH_ARRIVE_DIST = 40;     // close enough to the last known position to start sweeping
-static const int SEARCH_POINT_TOLERANCE = 8;  // close enough to a sweep point to count as arrived
-static const int SEARCH_MIN_OFFSET = 50;      // sweep points are this far from the last known position...
-static const int SEARCH_MAX_OFFSET = 150;     // ...up to this far
-static const int SEARCH_WAIT_MIN = 40;        // frames spent looking around at each point
-static const int SEARCH_WAIT_MAX = 80;
+static const int &SEARCH_ARRIVE_DIST = combatBalance.SEARCH_ARRIVE_DIST;     // close enough to the last known position to start sweeping
+static const int &SEARCH_POINT_TOLERANCE = combatBalance.SEARCH_POINT_TOLERANCE;  // close enough to a sweep point to count as arrived
+static const int &SEARCH_MIN_OFFSET = combatBalance.SEARCH_MIN_OFFSET;      // sweep points are this far from the last known position...
+static const int &SEARCH_MAX_OFFSET = combatBalance.SEARCH_MAX_OFFSET;     // ...up to this far
+static const int &SEARCH_WAIT_MIN = combatBalance.SEARCH_WAIT_MIN;        // frames spent looking around at each point
+static const int &SEARCH_WAIT_MAX = combatBalance.SEARCH_WAIT_MAX;
 
 struct MoveProposal
 {
@@ -538,29 +589,29 @@ static const int RANK_SOLDIER = 0;
 static const int RANK_VETERAN = 1;
 static const int RANK_SERGEANT = 2;
 
-static const int VETERAN_BONUS_HEALTH = 2;   // extra hp on top of the base health
-static const int SERGEANT_BONUS_HEALTH = 4;
-static const int RANK_MAX_BASE_HEALTH = 3;   // tougher enemies (spiders...) are never promoted
-static const int MAX_SERGEANTS = 5;        // alive at the same time on a map
-static const int SQUAD_PANIC_FRAMES = 150; // how long the squad is lost without its leader
+static const int &VETERAN_BONUS_HEALTH = combatBalance.VETERAN_BONUS_HEALTH;   // extra hp on top of the base health
+static const int &SERGEANT_BONUS_HEALTH = combatBalance.SERGEANT_BONUS_HEALTH;
+static const int &RANK_MAX_BASE_HEALTH = combatBalance.RANK_MAX_BASE_HEALTH;   // tougher enemies (spiders...) are never promoted
+static const int &MAX_SERGEANTS = combatBalance.MAX_SERGEANTS;        // alive at the same time on a map
+static const int &SQUAD_PANIC_FRAMES = combatBalance.SQUAD_PANIC_FRAMES; // how long the squad is lost without its leader
 
 // Chances (in %) are re-rolled for every enemy that is placed. Tune to taste.
 static int getVeteranChance()
 {
-	int chance = 10 + (game.stagesCleared * 3) + (game.skill * 4);
+	int chance = combatBalance.VETERAN_BASE_CHANCE + (game.stagesCleared * combatBalance.VETERAN_STAGE_CHANCE) + (game.skill * combatBalance.VETERAN_SKILL_CHANCE);
 
-	return (chance > 45) ? 45 : chance;
+	return std::min(chance, combatBalance.VETERAN_MAX_CHANCE);
 }
 
 static int getSergeantChance()
 {
 	// no sergeants in the very first missions
-	if (game.stagesCleared < 2)
+	if (game.stagesCleared < combatBalance.SERGEANT_MIN_STAGES)
 		return 0;
 
-	int chance = 6 + ((game.stagesCleared - 2) * 2) + (game.skill * 2);
+	int chance = combatBalance.SERGEANT_BASE_CHANCE + ((game.stagesCleared - combatBalance.SERGEANT_MIN_STAGES) * combatBalance.SERGEANT_STAGE_CHANCE) + (game.skill * combatBalance.SERGEANT_SKILL_CHANCE);
 
-	return (chance > 25) ? 25 : chance;
+	return std::min(chance, combatBalance.SERGEANT_MAX_CHANCE);
 }
 
 // Forget everything about an enemy that is being removed (and whoever followed it)
@@ -832,6 +883,8 @@ static Entity *spawnEnemyEntity(const char *name, int x, int y, int flags)
 	EnemyAIState &spawnState = getAIState(enemy);
 	spawnState.maxHealth = enemy->health;
 	initUtilityDroid(enemy, spawnState);
+	initBiomechShield(enemy, spawnState);
+	initEnemyShield(enemy, spawnState);
 	
 	enemy->reload = 120; // Wait about seconds seconds before attacking
 
@@ -926,7 +979,7 @@ static bool hasNearbyJumpPlatform(Entity *enemy, int direction, int edgeX, int f
 // Surround a new sergeant with a few soldiers
 static void spawnEscorts(Entity *leader)
 {
-	static const char * const names[3] = {"Pistol Blob", "Pistol Blob", "Machine Gun Blob"};
+	static const char * const names[3] = {"Pistol Blob", "Machine Gun Blob", "Machine Gun Blob"};
 	static const int offsets[6] = {-40, 40, -72, 72, -104, 104};
 
 	int wanted = 2 + ((game.skill >= 2) ? 1 : 0);
@@ -953,9 +1006,9 @@ static void spawnEscorts(Entity *leader)
 // Higher ranks may carry a different weapon than their base type. The weapon is always
 // taken from the same aiming style (ENT_AIMS blobs keep aimed weapons, the others keep
 // straight ones), so the AI, aim and burst code keep working as before.
-static const int VETERAN_WEAPON_CHANCE = 30;  // % of veterans that change weapon
-static const int SERGEANT_WEAPON_CHANCE = 60; // % of sergeants that change weapon
-static const int SERGEANT_ROCKET_CHANCE = 25; // % of the sergeants' aimed pools that also include rockets
+static const int &VETERAN_WEAPON_CHANCE = combatBalance.VETERAN_WEAPON_CHANCE;  // % of veterans that change weapon
+static const int &SERGEANT_WEAPON_CHANCE = combatBalance.SERGEANT_WEAPON_CHANCE; // % of sergeants that change weapon
+static const int &SERGEANT_ROCKET_CHANCE = combatBalance.SERGEANT_ROCKET_CHANCE; // % of the sergeants' aimed pools that also include rockets
 
 static void giveRankWeapon(Entity *enemy, int rank)
 {
@@ -964,13 +1017,14 @@ static void giveRankWeapon(Entity *enemy, int rank)
 	if ((int)(Math::prand() % 100) >= chance)
 		return;
 
-	Weapon *pool[6];
+	Weapon *pool[8];
 	int count = 0;
 
 	if (enemy->flags & ENT_AIMS)
 	{
 		pool[count++] = &weapon[WP_AIMEDPISTOL];
 		pool[count++] = &weapon[WP_AIMEDMACHINE];
+		pool[count++] = &weapon[WP_AIMEDMACHINE]; // double weight: more machine guns
 		pool[count++] = &weapon[WP_ALIENSPREAD];
 		pool[count++] = &weapon[WP_ALIENGRENADE];
 
@@ -980,11 +1034,12 @@ static void giveRankWeapon(Entity *enemy, int rank)
 	else
 	{
 		pool[count++] = &weapon[WP_MACHINEGUN];
+		pool[count++] = &weapon[WP_MACHINEGUN]; // double weight: more machine guns
 		pool[count++] = &weapon[WP_ALIENLASER];
 	}
 
 	// never pick the weapon the enemy already has
-	Weapon *candidates[6];
+	Weapon *candidates[8];
 	int total = 0;
 
 	for (int i = 0 ; i < count ; i++)
@@ -1009,6 +1064,27 @@ static void giveRankWeapon(Entity *enemy, int rank)
 	}
 }
 
+// More machine guns: this share of the ground blobs armed with the aimed pistol carries the aimed
+// machine gun instead. The name never changes (objectives still count the same enemy): only the weapon does.
+// Grows a little with the stages cleared and the difficulty. Tune to taste.
+static int getMachineGunChance()
+{
+	int chance = combatBalance.MACHINEGUN_BASE_CHANCE + (game.stagesCleared * combatBalance.MACHINEGUN_STAGE_CHANCE) + (game.skill * combatBalance.MACHINEGUN_SKILL_CHANCE);
+
+	return std::min(chance, combatBalance.MACHINEGUN_MAX_CHANCE);
+}
+
+static void giveMachineGun(Entity *enemy)
+{
+	if (enemy->currentWeapon != &weapon[WP_AIMEDPISTOL])
+		return;
+
+	if ((int)(Math::prand() % 100) >= getMachineGunChance())
+		return;
+
+	enemy->currentWeapon = &weapon[WP_AIMEDMACHINE];
+}
+
 // Decide the rank of a newly placed enemy (the name never changes, so objectives still count it)
 static void assignRank(Entity *enemy, int flags)
 {
@@ -1022,6 +1098,8 @@ static void assignRank(Entity *enemy, int flags)
 		return;
 
 	EnemyAIState &st = getAIState(enemy);
+
+	giveMachineGun(enemy);
 
 	// randomly appearing enemies can be veterans, but never lead a squad
 	bool spawned = ((flags & ENT_SPAWNED) != 0);
@@ -1420,6 +1498,30 @@ static bool isDroidLaser(Entity *enemy)
 	return (enemy->currentWeapon == &weapon[WEAPON_DROID_LASER]);
 }
 
+// The BioMech shoots through the same code as the Eye Droid, but keeps its own identity: bursts only (no sweep / beam)
+static bool isBiomechLimitedToBursts(Entity *enemy)
+{
+	return isBiomechSoldier(enemy) && (!BIOMECH_USES_ALL_LASER_MODES);
+}
+
+// Gunners plant their feet while they wind up, fire a burst or hold a beam. The BioMech keeps walking: it shoots on the move
+static bool holdsStillToShoot(Entity *enemy, EnemyAIState &st)
+{
+	if (isBiomechSoldier(enemy))
+		return false;
+
+	return (st.telegraph > 0) || (st.burstLeft > 0) || (st.beamTimer > 0);
+}
+
+// Frames the weapon stays locked once the magazine is empty
+static int getLaserReloadFrames(Entity *enemy)
+{
+	if (isBiomechSoldier(enemy))
+		return BIOMECH_LASER_RELOAD;
+
+	return LASER_RELOAD_FRAMES - (game.skill * LASER_RELOAD_SKILL_CUT);
+}
+
 static int pickLaserMode()
 {
 	int roll = Math::prand() % 100;
@@ -1443,6 +1545,9 @@ static int pickLaserModeForEnemy(Entity *enemy, EnemyAIState &st)
 {
 	if (st.energy < 2.0f)
 		return LASER_MODE_SINGLE;
+
+	if (isBiomechLimitedToBursts(enemy))
+		return (st.energy >= 3.0f) ? LASER_MODE_BURST : LASER_MODE_SINGLE;
 
 	float dx = fabsf((player.x + (player.width / 2)) - (enemy->x + (enemy->width / 2)));
 	float dy = fabsf((player.y + (player.height / 2)) - (enemy->y + (enemy->height / 2)));
@@ -1636,7 +1741,7 @@ static void fireDroidLaser(Entity *enemy, EnemyAIState &st, bool continuing, flo
 
 	// The beam is not a volley of bullets: it starts here and then runs on its own (updateDroidBeam).
 	// If the current mode would need more charge than the droid has, it can still fall back to the beam.
-	if (newVolley && (st.laserMode == LASER_MODE_BEAM) && (st.energy >= LASER_BEAM_CLIP_COST))
+	if (newVolley && (!isBiomechLimitedToBursts(enemy)) && (st.laserMode == LASER_MODE_BEAM) && (st.energy >= LASER_BEAM_CLIP_COST))
 	{
 		startDroidBeam(enemy, st);
 
@@ -1657,7 +1762,7 @@ static void fireDroidLaser(Entity *enemy, EnemyAIState &st, bool continuing, flo
 
 			if (st.energy < 1.0f)
 			{
-				if ((st.energy >= LASER_BEAM_CLIP_COST) && (st.laserMode != LASER_MODE_BEAM))
+				if ((!isBiomechLimitedToBursts(enemy)) && (st.energy >= LASER_BEAM_CLIP_COST) && (st.laserMode != LASER_MODE_BEAM))
 				{
 					st.laserMode = LASER_MODE_BEAM;
 					startDroidBeam(enemy, st);
@@ -1668,14 +1773,14 @@ static void fireDroidLaser(Entity *enemy, EnemyAIState &st, bool continuing, flo
 				}
 
 				st.energy = st.maxEnergy;
-				st.laserMode = pickLaserMode();
-				enemy->reload = std::max(enemy->reload, LASER_RELOAD_FRAMES - (game.skill * LASER_RELOAD_SKILL_CUT));
+				st.laserMode = isBiomechSoldier(enemy) ? pickLaserModeForEnemy(enemy, st) : pickLaserMode();
+				enemy->reload = std::max(enemy->reload, getLaserReloadFrames(enemy));
 				return;
 			}
 
 			if ((float)shots > st.energy)
 			{
-				if ((st.energy >= LASER_BEAM_CLIP_COST) && (st.laserMode != LASER_MODE_BEAM))
+				if ((!isBiomechLimitedToBursts(enemy)) && (st.energy >= LASER_BEAM_CLIP_COST) && (st.laserMode != LASER_MODE_BEAM))
 				{
 					st.laserMode = LASER_MODE_BEAM;
 					startDroidBeam(enemy, st);
@@ -1724,6 +1829,9 @@ static void fireDroidLaser(Entity *enemy, EnemyAIState &st, bool continuing, flo
 			if (st.volleyIndex > 1)
 				enemy->reload += BURST_PAUSE;
 
+			if (isBiomechSoldier(enemy))
+				st.biomechVolleyCooldown = BIOMECH_VOLLEY_COOLDOWN;
+
 			st.burstLeft = 0;
 			st.volleyTotal = 0;
 		}
@@ -1732,7 +1840,7 @@ static void fireDroidLaser(Entity *enemy, EnemyAIState &st, bool continuing, flo
 	// empty magazine: reload (shots are blocked while enemy->reload > 0) and pick a new preferred mode
 	if (st.energy <= 0.0f)
 	{
-		int reloadFrames = LASER_RELOAD_FRAMES - (game.skill * LASER_RELOAD_SKILL_CUT);
+		int reloadFrames = getLaserReloadFrames(enemy);
 
 		if (enemy->reload < reloadFrames)
 			enemy->reload = reloadFrames;
@@ -1753,7 +1861,7 @@ static void senseSurroundings(Entity *enemy, EnemyAIState &ai)
 
 	bool playerActive = (player.health > -60) && (game.missionOverReason != MIS_COMPLETE);
 	float dist = fabs(enemy->x - player.x);
-	bool inRange = playerActive && isEnemyOnScreen(enemy) && (dist <= VISION_RANGE) && (fabs(enemy->y - player.y) <= 100);
+	bool inRange = playerActive && isEnemyOnScreen(enemy) && (dist <= VISION_RANGE) && (fabs(enemy->y - player.y) <= combatBalance.VISION_VERTICAL_RANGE);
 
 	if (inRange)
 		ai.canSee = hasClearShot(enemy);
@@ -1879,6 +1987,42 @@ static void applyDroidAggressionPenalty(EnemyAIState &st, bool heavy)
 		st.rechargeTimer = std::min(DROID_RECHARGE_CAP, st.rechargeTimer + DROID_AGGRO_PENALTY_FRAMES);
 }
 
+// While the common firing code runs, the BioMech holds the Eye Droid laser (same bullet: speed, damage, flags,
+// sprite, sound) and is not an ENT_AIMS enemy, so it gets getAimDY() (aim with lead) like everybody else.
+// The destructor puts its own weapon and flags back whichever way lookForPlayer() returns.
+struct BiomechWeaponSwap
+{
+	Entity *entity;
+	Weapon *ownWeapon;
+	bool hadAims;
+
+	BiomechWeaponSwap(Entity *enemy) : entity(NULL), ownWeapon(NULL), hadAims(false)
+	{
+		if (!isBiomechSoldier(enemy))
+			return;
+
+		entity = enemy;
+		ownWeapon = enemy->currentWeapon;
+		hadAims = ((enemy->flags & ENT_AIMS) != 0);
+
+		enemy->currentWeapon = &weapon[WEAPON_DROID_LASER];
+
+		if (hadAims)
+			Math::removeBit(&enemy->flags, ENT_AIMS);
+	}
+
+	~BiomechWeaponSwap()
+	{
+		if (entity == NULL)
+			return;
+
+		entity->currentWeapon = ownWeapon;
+
+		if (hadAims)
+			Math::addBit(&entity->flags, ENT_AIMS);
+	}
+};
+
 void lookForPlayer(Entity *enemy)
 {
 	// player is dead
@@ -1896,11 +2040,23 @@ void lookForPlayer(Entity *enemy)
 		return;
 
 	// can't even jump that high!
-	if (y > 100)
+	if (y > combatBalance.VISION_VERTICAL_RANGE)
 		return;
 
 	EnemyAIState &st = getAIState(enemy);
 	bool isLeader = (enemy->owner == enemy);
+	BiomechWeaponSwap biomechWeapon(enemy);
+
+	// BioMech chasing Bob downward: player is on a lower platform.
+	// Push the biome toward the edge so the doAI() drop-down logic fires.
+	// (before the early returns below: it must keep chasing while it winds up or fires)
+	if (isBiomechSoldier(enemy) && (st.confused == 0) && (player.y > enemy->y + enemy->height + 16))
+	{
+		// Set destination directly to the player's position — doAI() will walk
+		// the enemy to the edge of its current platform and then drop off it.
+		enemy->tx = (int)player.x;
+		enemy->ty = (int)player.y;
+	}
 
 	// winding up a shot: stand still, doAI() tells us when to fire
 	if (st.telegraph > 0)
@@ -1951,7 +2107,7 @@ void lookForPlayer(Entity *enemy)
 	}
 
 	// can't fire while reloading, but keep chasing/turning. Only alert enemies attack.
-	if ((!isBiomechSoldier(enemy)) && (enemy->reload <= 0) && (alert || (enemy->flags & ENT_ALWAYSFIRES)))
+	if ((enemy->reload <= 0) && (alert || (enemy->flags & ENT_ALWAYSFIRES)))
 	{
 		float aimDY = getAimDY(enemy);
 
@@ -1973,7 +2129,7 @@ void lookForPlayer(Entity *enemy)
 			{
 				shoot = true;
 			}
-			else if (st.safeMode ? droidSafeAggression(enemy, st, canSee) : (isLeader ? ((Math::prand() % 100) < (4 + (game.skill * 3))) : ((Math::prand() % 850) <= (game.skill * 5))))
+			else if (((!isBiomechSoldier(enemy)) || (st.biomechVolleyCooldown <= 0)) && (st.safeMode ? droidSafeAggression(enemy, st, canSee) : (isLeader ? ((Math::prand() % 100) < (4 + (game.skill * 3))) : ((Math::prand() % 850) <= (game.skill * 5)))))
 			{
 				// wait for our turn to attack
 				if (canStartAttack())
@@ -2016,6 +2172,9 @@ void lookForPlayer(Entity *enemy)
 							}
 
 							st.telegraphTotal = st.telegraph;
+
+							if (isBiomechSoldier(enemy))
+								st.biomechAttackAnimTimer = BIOMECH_ATTACK_ANIMATION_FRAMES;
 						}
 						else
 						{
@@ -2191,16 +2350,6 @@ void lookForPlayer(Entity *enemy)
 				startGroundJump(enemy, st, (float)(direction * speed));
 			}
 		}
-	}
-
-	// BioMech chasing Bob downward: player is on a lower platform.
-	// Push the biome toward the edge so the doAI() drop-down logic fires.
-	if (isBiomechSoldier(enemy) && (player.y > enemy->y + enemy->height + 16))
-	{
-		// Set destination directly to the player's position — doAI() will walk
-		// the enemy to the edge of its current platform and then drop off it.
-		enemy->tx = (int)player.x;
-		enemy->ty = (int)player.y;
 	}
 }
 
@@ -2754,6 +2903,30 @@ static void updateDroidShield(Entity *enemy, EnemyAIState &ai)
 	}
 }
 
+// Shield recharge for the enemies that carry one without being the utility droid or a BioMech (those two do it themselves)
+static void updateEnemyShield(Entity *enemy, EnemyAIState &ai)
+{
+	if ((ai.maxShield <= 0) || (ai.utilityDroid) || (isBiomechSoldier(enemy)) || (ai.shield > 0) || (enemy->health <= 0))
+		return;
+
+	if (ai.rechargeTimer > 0)
+		ai.rechargeTimer--;
+
+	if (ai.rechargeTimer > 0)
+		return;
+
+	ai.shield = ai.maxShield;
+
+	for (int i = 0 ; i < ENEMY_SHIELD_RETURN_SPARKS ; i++)
+	{
+		float dx = Math::rrand(-15, 15); dx /= 10;
+		float dy = Math::rrand(-15, 15); dy /= 10;
+		map.addParticle(enemy->x + Math::rrand(0, enemy->width), enemy->y + Math::rrand(0, enemy->height), dx, dy, Math::rrand(10, 25), graphics.cyan, NULL, 0);
+	}
+}
+
+// The BioMech's laser is fired by lookForPlayer() (see BiomechWeaponSwap), the same system every other enemy uses:
+// warning, attack turns, aim with lead, burst, magazine. Only what is its own lives here: the claw and the warning sparks.
 static void updateBiomechCombat(Entity *enemy, EnemyAIState &ai)
 {
 	if (ai.maxEnergy <= 0.0f)
@@ -2762,16 +2935,27 @@ static void updateBiomechCombat(Entity *enemy, EnemyAIState &ai)
 		ai.energy = ai.maxEnergy;
 	}
 
-	if (ai.biomechReloadTimer > 0)
+	// shield: once broken it comes back, full, DROID_RECHARGE_FRAMES later (the Eye Droid does this in updateDroidShield)
+	if ((ai.maxShield > 0) && (ai.shield <= 0) && (enemy->health > 0))
 	{
-		if (--ai.biomechReloadTimer == 0)
-			ai.energy = ai.maxEnergy;
+		if (ai.rechargeTimer > 0)
+			ai.rechargeTimer--;
+
+		if (ai.rechargeTimer <= 0)
+		{
+			ai.shield = ai.maxShield;
+
+			for (int i = 0 ; i < BIOMECH_SHIELD_RETURN_SPARKS ; i++)
+			{
+				float dx = Math::rrand(-15, 15); dx /= 10;
+				float dy = Math::rrand(-15, 15); dy /= 10;
+				map.addParticle(enemy->x + Math::rrand(0, enemy->width), enemy->y + Math::rrand(0, enemy->height), dx, dy, Math::rrand(10, 25), graphics.cyan, NULL, 0);
+			}
+		}
 	}
 
 	if (ai.biomechVolleyCooldown > 0)
 		ai.biomechVolleyCooldown--;
-	if (ai.biomechShotTimer > 0)
-		ai.biomechShotTimer--;
 	if (ai.biomechAttackAnimTimer > 0)
 		ai.biomechAttackAnimTimer--;
 	if (ai.biomechMeleeParticleTimer > 0)
@@ -2779,22 +2963,15 @@ static void updateBiomechCombat(Entity *enemy, EnemyAIState &ai)
 	if (ai.biomechMeleeCooldown > 0)
 		ai.biomechMeleeCooldown--;
 
-	if (ai.biomechTelegraph > 0)
+	// sparks at the muzzle while it charges the shot
+	if ((ai.telegraph > 0) && ((ai.telegraph % 4) == 0))
 	{
-		ai.biomechTelegraph--;
-
-		if ((ai.biomechTelegraph % 4) == 0)
-		{
-			float muzzleX = enemy->x + (enemy->face ? 2 : enemy->width - 2);
-			float muzzleY = enemy->y + (enemy->height * 0.45f);
-			map.addParticle(muzzleX, muzzleY, Math::rrand(-10, 10) / 10.0f, Math::rrand(-20, 0) / 10.0f, 12, graphics.red, NULL, 0);
-		}
-
-		if (ai.biomechTelegraph == 0)
-			ai.biomechShotsLeft = BIOMECH_LASER_BURST_SHOTS;
+		float muzzleX = enemy->x + (enemy->face ? 2 : enemy->width - 2);
+		float muzzleY = enemy->y + (enemy->height * 0.45f);
+		map.addParticle(muzzleX, muzzleY, Math::rrand(-10, 10) / 10.0f, Math::rrand(-20, 0) / 10.0f, 12, graphics.red, NULL, 0);
 	}
 
-	bool laserBusy = (ai.biomechTelegraph > 0) || (ai.biomechShotsLeft > 0);
+	bool laserBusy = (ai.telegraph > 0) || (ai.burstLeft > 0);
 	float playerX = player.x + (player.width / 2.0f);
 	float playerY = player.y + (player.height / 2.0f);
 	float meleeDX = playerX - (enemy->x + enemy->width / 2.0f);
@@ -2818,72 +2995,6 @@ static void updateBiomechCombat(Entity *enemy, EnemyAIState &ai)
 			ai.biomechMeleeCooldown = BIOMECH_MELEE_COOLDOWN;
 			ai.biomechAttackAnimTimer = BIOMECH_ATTACK_ANIMATION_FRAMES;
 		}
-	}
-
-	if (ai.biomechShotsLeft > 0)
-	{
-		if (ai.biomechShotTimer == 0)
-		{
-			// The BioMech's shots are the Eye Droid's laser (same bullet: speed, damage, flags, sprite, sound).
-			// The weapon is swapped only while the shot is created, so the droid firing logic never sees it.
-			Weapon *ownWeapon = enemy->currentWeapon;
-			enemy->currentWeapon = &weapon[WEAPON_DROID_LASER];
-
-			float shotX = enemy->x + (enemy->width / 2.0f);
-			float shotY = enemy->y + (enemy->height / 2.0f);
-			float dx = ai.biomechAimX - shotX;
-			float dy = ai.biomechAimY - shotY;
-			float distance = sqrtf((dx * dx) + (dy * dy));
-
-			if (distance > 0.01f)
-			{
-				float speed = (float)abs(enemy->currentWeapon->getSpeed(enemy->face));
-				dx = (dx / distance) * speed;
-				dy = (dy / distance) * speed;
-			}
-			else
-			{
-				dx = (float)enemy->currentWeapon->getSpeed(enemy->face);
-				dy = 0.0f;
-			}
-
-			bool aimedWeapon = (enemy->flags & ENT_AIMS) != 0;
-			if (aimedWeapon)
-				Math::removeBit(&enemy->flags, ENT_AIMS);
-
-			addBullet(enemy, dx, dy);
-
-			enemy->currentWeapon = ownWeapon;
-
-			if (aimedWeapon)
-				Math::addBit(&enemy->flags, ENT_AIMS);
-
-			ai.energy -= 1.0f;
-			ai.biomechShotsLeft--;
-
-			if (ai.biomechShotsLeft > 0)
-			{
-				ai.biomechShotTimer = BIOMECH_LASER_SHOT_GAP;
-			}
-			else if (ai.energy <= 0.0f)
-			{
-				ai.biomechReloadTimer = BIOMECH_LASER_RELOAD;
-			}
-			else
-			{
-				ai.biomechVolleyCooldown = BIOMECH_LASER_BURST_INTERVAL - BIOMECH_LASER_WINDUP - ((BIOMECH_LASER_BURST_SHOTS - 1) * BIOMECH_LASER_SHOT_GAP);
-			}
-		}
-	}
-	else if ((ai.biomechTelegraph == 0) && (ai.biomechReloadTimer == 0) && (ai.biomechVolleyCooldown == 0) &&
-		(ai.energy >= BIOMECH_LASER_BURST_SHOTS) && ai.canSee && (player.health > 0) && (game.missionOver == 0))
-	{
-		enemy->face = (player.x < enemy->x) ? 1 : 0;
-		ai.biomechAimX = playerX;
-		ai.biomechAimY = playerY;
-		ai.biomechTelegraph = BIOMECH_LASER_WINDUP;
-		ai.biomechAttackAnimTimer = BIOMECH_ATTACK_ANIMATION_FRAMES;
-		ai.attackStamp = aiFrame;
 	}
 }
 
@@ -2992,6 +3103,9 @@ void doAI(Entity *enemy)
 	// utility droid: shield comes back 10 s after it broke
 	updateDroidShield(enemy, ai);
 
+	// other shielded enemies (Eye Droids V2.0 to V4.0): shield comes back 10 s after it broke
+	updateEnemyShield(enemy, ai);
+
 	// utility droid in safe mode: find (and keep) a spot Bob can't see
 	updateDroidCover(enemy, ai);
 
@@ -3077,7 +3191,7 @@ void doAI(Entity *enemy)
 	// while sweeping, the goal is the sweep point (tx is reset to the last known position every frame)
 	int goalX = mv.has ? mv.tx : enemy->tx;
 
-	if (aware && (goalX != curX) && (!enemy->falling) && (ai.telegraph == 0) && (ai.burstLeft == 0) && (ai.beamTimer == 0) && (curX == ai.prevX))
+	if (aware && (goalX != curX) && (!enemy->falling) && (!holdsStillToShoot(enemy, ai)) && (curX == ai.prevX))
 		ai.stuck++;
 	else
 		ai.stuck = 0;
@@ -3112,7 +3226,8 @@ void doAI(Entity *enemy)
 	else
 	{
 		// Distance preference: aware enemies stop at their preferred distance
-		if (aware && (ai.canSee))
+		// (the BioMech skips it and keeps heading for Bob, which is what ai.lastX holds while it sees him)
+		if (aware && (ai.canSee) && ((!isBiomechSoldier(enemy)) || BIOMECH_KEEPS_DISTANCE))
 		{
 			int prefDist = getPreferredDistance(enemy);
 			float currentDist = fabs(enemy->x - player.x);
@@ -3497,7 +3612,7 @@ void doAI(Entity *enemy)
 	}
 
 	// winding up a shot, firing a burst or a beam: hold still unless evading a shot
-	if (((ai.telegraph > 0) || (ai.burstLeft > 0) || (ai.beamTimer > 0)) && (ai.shotEvadeTimer <= 0))
+	if (holdsStillToShoot(enemy, ai) && (ai.shotEvadeTimer <= 0))
 	{
 		enemy->dx = 0;
 
@@ -3534,42 +3649,44 @@ void checkCombo()
 // While the shield holds, a cyan bubble (soft fill + bright rim) pulses around the droid,
 // drawn on top of the sprite and dimmer as the shield drops. Once it is broken the bubble
 // is gone and the droid sheds debris that falls and bounces.
-static SDL_Surface *droidBubble = NULL;
-static int droidBubbleW = 0;
-static int droidBubbleH = 0;
+static std::map<unsigned long long, SDL_Surface*> droidBubbles; // one per size: the Eye Droids and the BioMech mini boss differ
 static const int DROID_BUBBLE_PAD = 4; // pixels the bubble extends beyond the droid on every side
 static const float DROID_BUBBLE_OPACITY = 0.5f; // overall strength of the bubble (1.0 = full, lower = more subtle)
 
-static void createDroidBubble(int w, int h)
+// w, h: sprite size. padX, padY: pixels the bubble extends beyond it. maxRimPixels: thickest bright rim (0 = the usual 15% of the radius)
+static SDL_Surface *getDroidBubble(int w, int h, int padX, int padY, float maxRimPixels)
 {
-	if ((droidBubble != NULL) && (droidBubbleW == w) && (droidBubbleH == h))
-		return;
+	unsigned long long key = ((unsigned long long)(w & 0xffff) << 48) | ((unsigned long long)(h & 0xffff) << 32) |
+		((unsigned long long)(padX & 0xffff) << 16) | (unsigned long long)(padY & 0xffff);
 
-	if (droidBubble != NULL)
-	{
-		SDL_FreeSurface(droidBubble);
-		droidBubble = NULL;
-	}
+	std::map<unsigned long long, SDL_Surface*>::iterator found = droidBubbles.find(key);
 
-	droidBubbleW = w;
-	droidBubbleH = h;
+	if (found != droidBubbles.end())
+		return found->second;
 
-	int bw = w + (DROID_BUBBLE_PAD * 2);
-	int bh = h + (DROID_BUBBLE_PAD * 2);
+	int bw = w + (padX * 2);
+	int bh = h + (padY * 2);
 
-	droidBubble = SDL_CreateRGBSurface(0, bw, bh, 32, 0xff0000, 0xff00, 0xff, 0xff000000);
+	SDL_Surface *bubble = SDL_CreateRGBSurface(0, bw, bh, 32, 0xff0000, 0xff00, 0xff, 0xff000000);
 
-	if (droidBubble == NULL)
-		return;
+	droidBubbles[key] = bubble; // a failed surface is remembered too, so it is not retried every frame
 
-	SDL_SetSurfaceBlendMode(droidBubble, SDL_BLENDMODE_BLEND);
+	if (bubble == NULL)
+		return NULL;
 
-	if (SDL_MUSTLOCK(droidBubble))
-		SDL_LockSurface(droidBubble);
+	SDL_SetSurfaceBlendMode(bubble, SDL_BLENDMODE_BLEND);
+
+	float rimWidth = 0.15f;
+
+	if (maxRimPixels > 0.0f)
+		rimWidth = std::min(0.15f, maxRimPixels / ((bw + bh) / 4.0f));
+
+	if (SDL_MUSTLOCK(bubble))
+		SDL_LockSurface(bubble);
 
 	for (int py = 0 ; py < bh ; py++)
 	{
-		Uint32 *row = (Uint32*)(((Uint8*)droidBubble->pixels) + (py * droidBubble->pitch));
+		Uint32 *row = (Uint32*)(((Uint8*)bubble->pixels) + (py * bubble->pitch));
 
 		for (int px = 0 ; px < bw ; px++)
 		{
@@ -3584,10 +3701,10 @@ static void createDroidBubble(int w, int h)
 				float fill = 18.0f + (30.0f * d * d);
 				float rim = 0.0f;
 
-				// bright rim in the outer 15% of the radius
-				if (d >= 0.85f)
+				// bright rim in the outer part of the radius
+				if (d >= (1.0f - rimWidth))
 				{
-					rim = 170.0f * sinf(3.14159265f * ((d - 0.85f) / 0.15f));
+					rim = 170.0f * sinf(3.14159265f * ((d - (1.0f - rimWidth)) / rimWidth));
 				}
 
 				alpha = (int)((rim > fill) ? rim : fill);
@@ -3596,12 +3713,14 @@ static void createDroidBubble(int w, int h)
 					alpha = 255;
 			}
 
-			row[px] = SDL_MapRGBA(droidBubble->format, 0, 229, 255, (Uint8)alpha);
+			row[px] = SDL_MapRGBA(bubble->format, 0, 229, 255, (Uint8)alpha);
 		}
 	}
 
-	if (SDL_MUSTLOCK(droidBubble))
-		SDL_UnlockSurface(droidBubble);
+	if (SDL_MUSTLOCK(bubble))
+		SDL_UnlockSurface(bubble);
+
+	return bubble;
 }
 
 // Pieces that come off the droid: physical particles (gravity, bounce on the terrain)
@@ -3625,6 +3744,21 @@ static void addDroidDebris(Entity *enemy, int count, float speed)
 	}
 }
 
+// The shield is gone (a hit bigger than what was left, or the repulsor drained it) and shatters.
+// The Eye Droid goes into safe mode, which brings the shield back after 10 s. The BioMech mini boss stays on the
+// attack and just waits those 10 s (updateBiomechCombat).
+static void breakDroidShield(Entity *enemy, EnemyAIState &ai)
+{
+	ai.shield = 0;
+
+	if (ai.utilityDroid)
+		enterDroidSafeMode(ai);
+	else
+		ai.rechargeTimer = DROID_RECHARGE_FRAMES;
+
+	addDroidDebris(enemy, isBiomechSoldier(enemy) ? BIOMECH_SHIELD_BREAK_DEBRIS : 18, 3.0f);
+}
+
 static void drawDroidShield(Entity *enemy, int x, int y)
 {
 	if (enemy->health <= 0)
@@ -3632,14 +3766,19 @@ static void drawDroidShield(Entity *enemy, int x, int y)
 
 	std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
 
-	if ((it == aiState.end()) || (!it->second.utilityDroid))
+	if ((it == aiState.end()) || (it->second.maxShield <= 0))
 		return;
 
 	EnemyAIState &st = it->second;
+	bool big = isBiomechSoldier(enemy);
 
 	if (st.shield > 0)
 	{
-		createDroidBubble(enemy->width, enemy->height);
+		// a big sprite needs a wider bubble (a 4 px margin would cut its corners)
+		int padX = big ? std::max(DROID_BUBBLE_PAD, (int)(enemy->width * BIOMECH_BUBBLE_PAD_FRACTION)) : DROID_BUBBLE_PAD;
+		int padY = big ? std::max(DROID_BUBBLE_PAD, (int)(enemy->height * BIOMECH_BUBBLE_PAD_FRACTION)) : DROID_BUBBLE_PAD;
+
+		SDL_Surface *droidBubble = getDroidBubble(enemy->width, enemy->height, padX, padY, big ? BIOMECH_BUBBLE_MAX_RIM : 0.0f);
 
 		if (droidBubble == NULL)
 			return;
@@ -3658,13 +3797,13 @@ static void drawDroidShield(Entity *enemy, int x, int y)
 			alpha = 255;
 
 		SDL_SetSurfaceAlphaMod(droidBubble, (Uint8)alpha);
-		graphics.blit(droidBubble, x - DROID_BUBBLE_PAD, y - DROID_BUBBLE_PAD, graphics.screen, false);
+		graphics.blit(droidBubble, x - padX, y - padY, graphics.screen, false);
 		return;
 	}
 
 	// shield down: it keeps losing pieces
 	if ((aiFrame % 3) == 0)
-		addDroidDebris(enemy, Math::rrand(1, 2), 1.0f);
+		addDroidDebris(enemy, big ? Math::rrand(2, 4) : Math::rrand(1, 2), 1.0f);
 }
 
 // ---- Eye Droid beam: look ----
@@ -3803,7 +3942,7 @@ static int soakShieldDamage(Entity *enemy, int damage)
 {
 	std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
 
-	if ((it == aiState.end()) || (!it->second.utilityDroid) || (it->second.shield <= 0) || (damage <= 0))
+	if ((it == aiState.end()) || (it->second.maxShield <= 0) || (it->second.shield <= 0) || (damage <= 0))
 		return damage;
 
 	EnemyAIState &ai = it->second;
@@ -3815,10 +3954,7 @@ static int soakShieldDamage(Entity *enemy, int damage)
 	}
 
 	int overflow = damage - ai.shield;
-	ai.shield = 0;
-	enterDroidSafeMode(ai); // 10 s until the shield is back
-
-	addDroidDebris(enemy, 18, 3.0f); // the shield shatters
+	breakDroidShield(enemy, ai); // 10 s until the shield is back
 
 	return overflow;
 }
@@ -3866,22 +4002,38 @@ bool deflectGrenadeAtDroids(Entity *bullet)
 
 		std::map<Entity*, EnemyAIState>::iterator it = aiState.find(enemy);
 
-		if ((it == aiState.end()) || (!it->second.utilityDroid) || (it->second.shield < DROID_DEFLECT_COST))
+		if ((it == aiState.end()) || (it->second.maxShield <= 0) || (it->second.shield < DROID_DEFLECT_COST))
 			continue;
 
 		float cx = enemy->x + (enemy->width / 2.0f);
 		float cy = enemy->y + (enemy->height / 2.0f);
-		float radius = (((enemy->width > enemy->height) ? enemy->width : enemy->height) / 2.0f) + DROID_DEFLECT_MARGIN;
 
-		float nx = bx - cx;
-		float ny = by - cy;
-		float dist = sqrtf((nx * nx) + (ny * ny));
+		// The Eye Droid's field is a circle. The BioMech mini boss is tall and narrow (48x80): a circle sized by its height would
+		// stick out sideways far more than DROID_DEFLECT_MARGIN, so its field is an ellipse that reaches that margin past its sprite
+		float ax = (((enemy->width > enemy->height) ? enemy->width : enemy->height) / 2.0f) + DROID_DEFLECT_MARGIN;
+		float ay = ax;
 
-		if ((dist >= radius) || (dist < 0.01f))
+		if (isBiomechSoldier(enemy))
+		{
+			ax = (enemy->width / 2.0f) + DROID_DEFLECT_MARGIN;
+			ay = (enemy->height / 2.0f) + DROID_DEFLECT_MARGIN;
+		}
+
+		// the grenade's place in the field, where the field's edge is at distance 1
+		float ux = (bx - cx) / ax;
+		float uy = (by - cy) / ay;
+		float ulen = sqrtf((ux * ux) + (uy * uy));
+
+		if ((ulen >= 1.0f) || (ulen < 0.0001f))
 			continue;
 
-		nx /= dist;
-		ny /= dist;
+		// normal of the field's edge in that direction (for a circle it is just the direction from the center)
+		float nx = ux / ax;
+		float ny = uy / ay;
+		float nlen = sqrtf((nx * nx) + (ny * ny));
+
+		nx /= nlen;
+		ny /= nlen;
 
 		float into = (bullet->dx * nx) + (bullet->dy * ny);
 
@@ -3891,8 +4043,12 @@ bool deflectGrenadeAtDroids(Entity *bullet)
 		// mirror the velocity about the normal and push the grenade back to the field's edge
 		bullet->dx -= 2.0f * into * nx;
 		bullet->dy -= 2.0f * into * ny;
-		bullet->x += nx * ((radius + 2.0f) - dist);
-		bullet->y += ny * ((radius + 2.0f) - dist);
+
+		float edgeX = cx + ((ux / ulen) * (ax + 2.0f));
+		float edgeY = cy + ((uy / ulen) * (ay + 2.0f));
+
+		bullet->x += edgeX - bx;
+		bullet->y += edgeY - by;
 
 		if (bullet->dx != 0.0f)
 			bullet->face = (bullet->dx < 0.0f) ? 1 : 0;
@@ -3906,17 +4062,13 @@ bool deflectGrenadeAtDroids(Entity *bullet)
 		{
 			float pdx = Math::rrand(-20, 20); pdx /= 10;
 			float pdy = Math::rrand(-20, 20); pdy /= 10;
-			map.addParticle(cx + (nx * (radius - 6.0f)), cy + (ny * (radius - 6.0f)), pdx, pdy, Math::rrand(10, 25), graphics.cyan, NULL, 0);
+			map.addParticle(edgeX - (nx * 8.0f), edgeY - (ny * 8.0f), pdx, pdy, Math::rrand(10, 25), graphics.cyan, NULL, 0);
 		}
 
 		audio.playSound(SND_CLANG, CH_ANY, enemy->x);
 
 		if (ai.shield <= 0)
-		{
-			ai.shield = 0;
-			addDroidDebris(enemy, 18, 3.0f); // the field collapses like a broken shield
-			enterDroidSafeMode(ai);
-		}
+			breakDroidShield(enemy, ai); // the field collapses like a broken shield
 
 		return true;
 	}
@@ -4497,6 +4649,7 @@ void loadEnemy(const char *token)
 
 void loadDefEnemies()
 {
+	combatBalance.load("combat.cfg");
 	for (int i = 0 ; i < MAX_ENEMIES ; i++)
 	{
 		defEnemy[i].name[0] = 0;

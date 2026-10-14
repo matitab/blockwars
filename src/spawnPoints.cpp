@@ -106,6 +106,35 @@ bool okayToSpawnEnemy(const char *name, int x, int y)
 	return false;
 }
 
+// false = los enemigos solo son los colocados en el mapa (sin respawn infinito).
+// Los hazards (lava, rocas, estalactitas) y los items de ayuda siguen funcionando.
+static const bool ENEMY_RESPAWN_ENABLED = false;
+
+// Maximo de enemigos generados por los spawn points que pueden estar vivos a la vez.
+// Si se llega al tope, no se genera ninguno mas hasta que el jugador elimine alguno.
+static int maxSpawnedEnemies()
+{
+	return 2 + game.skill;
+}
+
+static int countSpawnedEnemies()
+{
+	int count = 0;
+	Entity *e = (Entity*)map.enemyList.getHead();
+
+	while (e->next != NULL)
+	{
+		e = (Entity*)e->next;
+
+		if ((e->flags & ENT_SPAWNED) && (e->health > 0))
+		{
+			count++;
+		}
+	}
+
+	return count;
+}
+
 void doSpawnPoints()
 {
 	SpawnPoint *sp = (SpawnPoint*)map.spawnList.getHead();
@@ -121,6 +150,11 @@ void doSpawnPoints()
 		sp->think();
 
 		if (!sp->active)
+		{
+			continue;
+		}
+
+		if ((!ENEMY_RESPAWN_ENABLED) && (sp->spawnType == SPW_ENEMY))
 		{
 			continue;
 		}
@@ -151,6 +185,8 @@ void doSpawnPoints()
 
 		if (sp->readyToSpawn())
 		{	
+			bool placementFailed = false;
+
 			if ((sp->spawnType != SPW_ENEMY) && (sp->spawnType != SPW_ITEM))
 			{
 				// If the player is too far away, don't spawn (unless it's random enemy / item spawning)
@@ -229,7 +265,12 @@ void doSpawnPoints()
 					if (game.missionOverReason != MIS_INPROGRESS)
 						break;
 
+					// Tope de enemigos vivos generados por spawn
+					if (countSpawnedEnemies() >= maxSpawnedEnemies())
+						break;
+
 					enemy = map.getSpawnableEnemy();
+					placementFailed = true;
 
 					x = (int)(player.x) >> BRICKSHIFT;
 					y = (int)(player.y) >> BRICKSHIFT;
@@ -247,6 +288,7 @@ void doSpawnPoints()
 								y = y << BRICKSHIFT;
 								addEnemy(enemy, x, y, ENT_SPAWNED);
 								addTeleportParticles(x, y, 25, SND_TELEPORT2);
+								placementFailed = false;
 							}
 						}
 					}
@@ -295,12 +337,11 @@ void doSpawnPoints()
 
 			sp->reset();
 
-			if (sp->spawnType == SPW_ENEMY)
+			// Reintento rapido solo si no se encontro un lugar valido para el enemigo.
+			// Antes se aplicaba tambien despues de un spawn exitoso, lo que encadenaba apariciones.
+			if ((sp->spawnType == SPW_ENEMY) && placementFailed)
 			{
-				if ((Math::prand() % (game.skill + 2)) > 0)
-				{
-					sp->requiredInterval = Math::rrand(1, 30);
-				}
+				sp->requiredInterval = Math::rrand(1, 30);
 			}
 		}
 	}
